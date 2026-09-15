@@ -11,7 +11,7 @@ import { z } from "zod";
  */
 
 /** Como o produto entrou no catálogo. Vocabulário ABERTO, sem CHECK no banco. */
-export const ORIGENS_DO_PRODUTO = ["manual", "planilha", "nuvemshop"] as const;
+export const ORIGENS_DO_PRODUTO = ["manual", "planilha", "nuvemshop", "tiny"] as const;
 export type OrigemDoProduto = (typeof ORIGENS_DO_PRODUTO)[number];
 
 /**

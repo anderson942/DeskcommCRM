@@ -451,6 +451,19 @@ export const NAV_CATALOG = [
     // navegável. Para voltar a mostrá-la, basta devolver `sidebar: true`.
   },
   {
+    href: "/app/integrations/tiny",
+    label: "Tiny",
+    description: "Sincroniza produtos, preço e estoque do ERP com o catálogo do CRM.",
+    icon: "Package",
+    group: "canais",
+    // Mesma regra do Nuvemshop: a página não filtra por papel, quem escreve
+    // (conectar/desconectar) exige admin.
+    minRole: "admin",
+    // Diferente do Nuvemshop: ESTA integração é usada de verdade nesta
+    // instalação (decisão do Anderson, 2026-09-15) — fica na sidebar.
+    sidebar: true,
+  },
+  {
     href: "/app/webhooks",
     label: "Webhooks",
     description: "Avise outros sistemas quando algo acontecer aqui dentro.",

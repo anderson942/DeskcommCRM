@@ -82,6 +82,11 @@ CRONS="
 */5 * * * *|45|api/v1/cron/agenda-reminder
 */15 * * * *|45|api/v1/cron/agenda-expira-pendentes
 */15 * * * *|60|api/v1/cron/risk-watcher
+# ESTOQUE DA TINY. A cada 5 minutos, decisão do Anderson (2026-09-15) — a Tiny
+# não tem webhook de push, então é polling. Timeout maior que os outros crons
+# porque a primeira carga do catálogo pode levar um tempo (uma chamada extra
+# de estoque por produto ATIVO).
+*/5 * * * *|180|api/v1/cron/tiny-stock-sync
 # O CASO PARADO. De hora em hora, e não a cada 5 minutos: o prazo é de 24h, e
 # uma varredura mais frequente só gastaria consulta para descobrir o mesmo nada.
 7 * * * *|60|api/v1/cron/case-stale-watcher

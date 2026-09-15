@@ -18,6 +18,8 @@ export {
   Users,
   UsersThree,
   Storefront,
+  // integração de estoque/ERP (Tiny)
+  Package,
   Robot,
   Sparkle,
   ShieldCheck,

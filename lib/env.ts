@@ -319,6 +319,11 @@ const schema = z.object({
     .default("false")
     .transform((v) => v === "true"),
 
+  // Tiny (ERP) — opcional, mesmo padrão do Nuvemshop. getConfig()==null quando
+  // faltar qualquer uma; a tela mostra o card "configure o .env".
+  TINY_CLIENT_ID: z.string().optional().default(""),
+  TINY_CLIENT_SECRET: z.string().optional().default(""),
+
   // App URLs
   NEXT_PUBLIC_APP_URL: z
     .string()
