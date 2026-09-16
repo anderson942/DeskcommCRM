@@ -82,11 +82,21 @@ CRONS="
 */5 * * * *|45|api/v1/cron/agenda-reminder
 */15 * * * *|45|api/v1/cron/agenda-expira-pendentes
 */15 * * * *|60|api/v1/cron/risk-watcher
-# ESTOQUE DA TINY. A cada 5 minutos, decisão do Anderson (2026-09-15) — a Tiny
-# não tem webhook de push, então é polling. Timeout maior que os outros crons
-# porque a primeira carga do catálogo pode levar um tempo (uma chamada extra
-# de estoque por produto ATIVO).
+# ESTOQUE DA TINY. Decisão do Anderson (2026-09-15), SUBSTITUÍDA um dia
+# depois (2026-09-16) pela Shoppub — ver comentário logo abaixo. A linha
+# fica: a integração está `disconnected` no banco, e a query da rota
+# (`.eq("status","healthy")`) devolve zero linhas — no-op barato, reconectável
+# sem mexer em código se um dia fizer sentido de novo.
 */5 * * * *|180|api/v1/cron/tiny-stock-sync
+# CATÁLOGO DA SHOPPUB — rede de segurança, não a fonte principal de frescor.
+# Quem mantém o preço/estoque em dia é o WEBHOOK (`/api/v1/webhooks/shoppub/
+# [token]`, dispara na hora que muda); este cron cobre a carga inicial (produto
+# que já existia antes de conectar nunca dispara webhook) e reconcilia o que um
+# webhook falho (5 tentativas em 15min, documentado pela Shoppub) deixou pra
+# trás. Timeout mais curto que o da Tiny porque `GET /produtos/` já devolve
+# preço e estoque no mesmo request — sem a chamada extra por produto que a
+# Tiny exigia.
+*/5 * * * *|90|api/v1/cron/shoppub-backfill
 # O CASO PARADO. De hora em hora, e não a cada 5 minutos: o prazo é de 24h, e
 # uma varredura mais frequente só gastaria consulta para descobrir o mesmo nada.
 7 * * * *|60|api/v1/cron/case-stale-watcher

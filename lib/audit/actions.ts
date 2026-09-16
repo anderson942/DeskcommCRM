@@ -556,6 +556,13 @@ export const AUDIT_ACTIONS = [
   // porque toda leitura de `admin/` é auditada neste repo — e porque aqui o
   // operador enxerga o agente publicado na organização de outra pessoa.
   "platform_admin.tenant_agents_viewed",
+  // Integração Shoppub — a loja vira fonte de preço/estoque do catálogo no
+  // lugar da Tiny (2026-09-16). Token estático por tenant, não OAuth.
+  "shoppub.connected",
+  "shoppub.disconnected",
+  "shoppub.connect_failed",
+  "shoppub.webhook_received",
+  "shoppub.webhook_rejected",
 ] as const;
 
 /** Um código de auditoria. Derivado de `AUDIT_ACTIONS` — não redigite a lista. */

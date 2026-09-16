@@ -459,8 +459,26 @@ export const NAV_CATALOG = [
     // Mesma regra do Nuvemshop: a página não filtra por papel, quem escreve
     // (conectar/desconectar) exige admin.
     minRole: "admin",
-    // Diferente do Nuvemshop: ESTA integração é usada de verdade nesta
-    // instalação (decisão do Anderson, 2026-09-15) — fica na sidebar.
+    // ⚠️ ERA `sidebar: true` (decisão de 2026-09-15). Decisão do Anderson um
+    // dia depois (2026-09-16): a Shoppub substitui a Tiny como fonte de
+    // preço/estoque do catálogo — o preço ajustado DENTRO da Shoppub nunca
+    // chegava na Tiny, então o sync (mesmo saudável) mantinha o catálogo
+    // sistematicamente desatualizado. Mesmo tratamento que o Nuvemshop já
+    // tinha aqui: a rota, a página e as Server Actions ficam intactas
+    // (reconectável se um dia fizer sentido de novo), só sai da sidebar.
+  },
+  {
+    href: "/app/integrations/shoppub",
+    label: "Shoppub",
+    description: "Sincroniza preço e estoque da loja em tempo real, por webhook — o preço que o cliente vê.",
+    icon: "Storefront",
+    group: "canais",
+    // Mesma regra das outras integrações de e-commerce: a página não filtra
+    // por papel, quem escreve (conectar/desconectar) exige admin.
+    minRole: "admin",
+    // Substituiu a Tiny como fonte de preço/estoque (decisão do Anderson,
+    // 2026-09-16) — é a integração usada de verdade nesta instalação, fica
+    // na sidebar (mesmo critério que valia pra Tiny antes desta troca).
     sidebar: true,
   },
   {
