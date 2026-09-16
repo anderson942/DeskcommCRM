@@ -132,6 +132,8 @@ export interface Produto {
   marca: string | null;
   categoria: string | null;
   preco_cents: number;
+  /** "De" — só quando existe promoção ativa (Tiny). `null` pro resto (imensa maioria). */
+  preco_original_cents: number | null;
   moeda: string;
   custo_cents: number | null;
   controla_estoque: boolean;
@@ -144,5 +146,5 @@ export interface Produto {
 
 /** As colunas que a tela e a rota leem — uma lista, não duas. */
 export const COLUNAS_DO_PRODUTO =
-  "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, custo_cents, " +
+  "id, codigo, nome, descricao, marca, categoria, preco_cents, preco_original_cents, moeda, custo_cents, " +
   "controla_estoque, quantidade, ativo, origem, imagem_url, updated_at";

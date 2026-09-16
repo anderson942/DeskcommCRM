@@ -467,8 +467,15 @@ export function ProdutosClient({
                     : ` · ${t("sem controle de estoque")}`}
                 </p>
               </div>
-              <span className="shrink-0 tabular-nums font-medium">
-                {formatCents(p.preco_cents, p.moeda)}
+              <span className="shrink-0 text-right tabular-nums">
+                {p.preco_original_cents !== null ? (
+                  <span className="mr-1.5 text-muted-foreground line-through" data-testid={`preco-de-${p.codigo}`}>
+                    {formatCents(p.preco_original_cents, p.moeda)}
+                  </span>
+                ) : null}
+                <span className="font-medium" data-testid={`preco-por-${p.codigo}`}>
+                  {formatCents(p.preco_cents, p.moeda)}
+                </span>
               </span>
               {podeEditar ? (
                 <Button

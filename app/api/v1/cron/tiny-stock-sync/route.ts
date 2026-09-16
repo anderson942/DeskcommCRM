@@ -130,6 +130,16 @@ function precoEfetivo(p: TinyProduto["precos"]): number {
   return p.precoPromocional !== null && p.precoPromocional > 0 ? p.precoPromocional : p.preco;
 }
 
+/**
+ * O "de" — só quando existe promoção de verdade (efetivo < preço cheio).
+ * `null` no caso comum evita `preco_original_cents` virar um "de X por X"
+ * sem desconto nenhum, que é ruído na tela, não informação.
+ */
+function precoOriginal(p: TinyProduto["precos"]): number | null {
+  const efetivo = precoEfetivo(p);
+  return efetivo < p.preco ? p.preco : null;
+}
+
 /** Um produto da Tiny → a linha que `catalog_products` espera. */
 function mapearProduto(p: TinyProduto, quantidade: number, orgId: string) {
   return {
@@ -139,6 +149,10 @@ function mapearProduto(p: TinyProduto, quantidade: number, orgId: string) {
     marca: null,
     categoria: null,
     preco_cents: Math.round(precoEfetivo(p.precos) * 100),
+    preco_original_cents: (() => {
+      const original = precoOriginal(p.precos);
+      return original !== null ? Math.round(original * 100) : null;
+    })(),
     custo_cents: p.precos.precoCusto !== null ? Math.round(p.precos.precoCusto * 100) : null,
     controla_estoque: true,
     quantidade,
