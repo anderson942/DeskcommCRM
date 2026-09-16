@@ -47,6 +47,24 @@ export const dynamic = "force-dynamic";
 /** Teto de produtos alterados processados por rodada — protege o rate limit. */
 const LIMITE_PRODUTOS_POR_RODADA = 500;
 const PAGINA = 100;
+/**
+ * Quantos produtos da página são processados em paralelo.
+ *
+ * Medido em produção (2026-09-16): com isso em 1 (sequencial — cada produto
+ * era `await estoque` + `await upsert` um atrás do outro), uma rodada de até
+ * 500 produtos passava fácil dos 180s do timeout do cron (`entrypoint.sh`).
+ * O curl desiste aos 180s, mas o handler Next NÃO é abortado — continua
+ * rodando no servidor. Resultado: a rodada seguinte (crond dispara de novo em
+ * 5 min, sem checar se a anterior terminou) começava com o MESMO
+ * `store_metadata.backfill_offset`, porque a rodada anterior ainda não tinha
+ * chegado no update final — duas rodadas concorrentes reescrevendo o mesmo
+ * offset, uma por cima da outra. Catálogo de 51 mil produtos avançando a
+ * ~244/rodada em vez de perto do teto de 500 era o sintoma.
+ * 8 é conservador de propósito — o rate limit da Tiny é POR CONTA, não por
+ * app (comentário em `api-client.ts`), e não há como testar o teto real sem
+ * arriscar 429 em produção.
+ */
+const CONCORRENCIA = 8;
 
 interface LinhaDeIntegracao {
   id: string;
@@ -161,6 +179,44 @@ function mapearProduto(p: TinyProduto, quantidade: number, orgId: string) {
   };
 }
 
+type ResultadoProduto = "ok" | "erro" | "rate_limited";
+
+/** Busca estoque (se ativo) + upsert de UM produto. Nunca lança — o chamador
+ * roda vários em paralelo via `Promise.all`, e uma rejeição no meio do lote
+ * derrubaria os outros junto. */
+async function processarProduto(
+  client: TinyApiClient,
+  admin: ReturnType<typeof createAdminClient>,
+  produto: TinyProduto,
+  orgId: string,
+): Promise<ResultadoProduto> {
+  try {
+    let quantidade = 0;
+    if (SITUACOES_ATIVAS.has(produto.situacao)) {
+      const estoque = await client.obterEstoque(produto.id);
+      quantidade = Math.max(0, estoque.disponivel);
+    }
+    const linha = mapearProduto(produto, quantidade, orgId);
+    const { error } = await admin
+      .from("catalog_products")
+      .upsert(linha, { onConflict: "organization_id,codigo" });
+    if (error) {
+      logger.warn("[tiny-stock-sync] upsert falhou", { organizationId: orgId, codigo: linha.codigo, detail: error.message });
+      return "erro";
+    }
+    return "ok";
+  } catch (err) {
+    // Um produto com estoque indisponível não pode travar o lote inteiro.
+    const rateLimited = err instanceof TinyApiError && err.code === "rate_limited";
+    logger.warn("[tiny-stock-sync] falhou num produto", {
+      organizationId: orgId,
+      produtoId: produto.id,
+      detail: err instanceof Error ? err.message : "erro",
+    });
+    return rateLimited ? "rate_limited" : "erro";
+  }
+}
+
 async function sincronizarOrganizacao(
   admin: ReturnType<typeof createAdminClient>,
   row: LinhaDeIntegracao,
@@ -202,46 +258,29 @@ async function sincronizarOrganizacao(
       break;
     }
 
-    for (const produto of pagina.itens) {
-      // Produto PAI (agrupador de variações) não é item vendável — não tem
-      // estoque próprio e não deve entrar no catálogo que a IA usa pra
-      // responder preço/disponibilidade. Só pula a linha (não conta como
-      // processado nem como erro — não é falha, é fora de escopo).
-      if (produto.tipoVariacao === "P") continue;
-      try {
-        let quantidade = 0;
-        if (SITUACOES_ATIVAS.has(produto.situacao)) {
-          const estoque = await client.obterEstoque(produto.id);
-          quantidade = Math.max(0, estoque.disponivel);
-        }
-        const linha = mapearProduto(produto, quantidade, row.organization_id);
-        const { error } = await admin
-          .from("catalog_products")
-          .upsert(linha, { onConflict: "organization_id,codigo" });
-        if (error) {
-          erros++;
-          logger.warn("[tiny-stock-sync] upsert falhou", {
-            organizationId: row.organization_id,
-            codigo: linha.codigo,
-            detail: error.message,
-          });
-        } else {
-          processados++;
-        }
-      } catch (err) {
-        erros++;
-        // Um produto com estoque indisponível não pode travar o lote inteiro.
-        const rateLimited = err instanceof TinyApiError && err.code === "rate_limited";
-        logger.warn("[tiny-stock-sync] falhou num produto", {
-          organizationId: row.organization_id,
-          produtoId: produto.id,
-          detail: err instanceof Error ? err.message : "erro",
-        });
-        if (rateLimited) {
-          esgotouTudo = false;
-          break; // sem adiantar martelar um 429 no resto do lote
-        }
+    // Produto PAI (agrupador de variações) não é item vendável — não tem
+    // estoque próprio e não deve entrar no catálogo que a IA usa pra
+    // responder preço/disponibilidade. Filtrado ANTES do lote: não conta
+    // como processado nem como erro, é fora de escopo.
+    const vendaveis = pagina.itens.filter((p) => p.tipoVariacao !== "P");
+    let pararPorRateLimit = false;
+
+    for (let i = 0; i < vendaveis.length; i += CONCORRENCIA) {
+      const lote = vendaveis.slice(i, i + CONCORRENCIA);
+      const resultados = await Promise.all(
+        lote.map((produto) => processarProduto(client, admin, produto, row.organization_id)),
+      );
+      for (const r of resultados) {
+        if (r === "ok") processados++;
+        else erros++;
+        if (r === "rate_limited") pararPorRateLimit = true;
       }
+      if (pararPorRateLimit || processados + erros >= LIMITE_PRODUTOS_POR_RODADA) break;
+    }
+
+    if (pararPorRateLimit) {
+      esgotouTudo = false; // sem adiantar martelar um 429 no resto do lote
+      break;
     }
 
     if (pagina.itens.length < PAGINA) break; // última página — esgotou de verdade

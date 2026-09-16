@@ -37,6 +37,10 @@ export const PUBLIC_PATHS: RegExp[] = [
   // qualquer sub-path futuro nascer público de carona.
   /^\/api\/v1\/agenda\/google\/callback$/,
   /^\/api\/v1\/integrations\/nuvemshop\/callback$/,
+  // Mesmo motivo do Nuvemshop, uma linha acima: identidade vem do `state`
+  // assinado (`lib/tiny/state.ts`), não da sessão — o cookie sameSite=strict
+  // não viaja no redirect que a Tiny faz de volta ao navegador.
+  /^\/api\/v1\/integrations\/tiny\/callback$/,
   /^\/api\/internal\//,
   /^\/api\/mcp(\/.*)?$/,
   // GET /api/v1/contacts aceita SESSÃO ou Bearer `dsk_...` (api_tokens) — a
