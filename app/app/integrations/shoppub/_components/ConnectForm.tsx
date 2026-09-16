@@ -54,17 +54,17 @@ export function ConnectForm({ disabled }: { disabled?: boolean }) {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
       <div className="space-y-1.5">
-        <Label htmlFor="shoppub-subdominio">{t("Subdomínio da loja")}</Label>
+        <Label htmlFor="shoppub-subdominio">{t("Endereço da loja")}</Label>
         <Input
           id="shoppub-subdominio"
-          placeholder="outlet360"
+          placeholder="outlet360.com.br"
           value={subdominio}
           onChange={(e) => setSubdominio(e.target.value)}
           disabled={disabled || pending}
           autoComplete="off"
         />
         <p className="text-xs text-muted-foreground">
-          {t("A parte antes de .shoppub.com.br — pode colar a URL inteira que eu extraio.")}
+          {t("O domínio da sua loja (o que o cliente acessa) ou o subdomínio da Shoppub — pode colar a URL inteira que eu extraio.")}
         </p>
       </div>
       <div className="space-y-1.5">

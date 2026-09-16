@@ -11,24 +11,41 @@
  * Documentação oficial: https://shoppub.readme.io/reference/introducao-intro
  */
 
-export function baseUrlFor(subdominio: string): string {
-  return `https://${subdominio}.shoppub.com.br/api/v1`;
+export function baseUrlFor(host: string): string {
+  return `https://${host}/api/v1`;
 }
 
 /**
- * Extrai o subdomínio de qualquer forma que o operador cole: já limpo
- * ("outlet360"), URL completa ("https://outlet360.shoppub.com.br/admin") ou
- * só o host. Falha fechado (`null`) — subdomínio errado aponta a integração
- * pra loja de outra pessoa, silenciosamente.
+ * Normaliza o que o operador cola pra um HOST completo — não só o rótulo
+ * antes do primeiro ponto.
+ *
+ * ⚠️ Essa era a versão anterior desta função, e o bug era real: ela pegava
+ * SÓ o primeiro rótulo (`host.split(".")[0]`), assumindo que toda loja usa o
+ * padrão `<slug>.shoppub.com.br`. Medido em produção — o Anderson colou
+ * `www.outlet360.com.br` (o domínio PRÓPRIO da loja, não o subdomínio da
+ * Shoppub) e a função devolveu `"www"`, que virou `https://www.shoppub.com.br/
+ * api/v1` — host que não existe, e o teste da credencial falhou sem dizer o
+ * motivo real (nem chegou a bater 401, foi antes disso).
+ *
+ * Muita loja usa domínio PRÓPRIO na frente da Shoppub, não o subdomínio
+ * padrão — e não há como distinguir os dois só olhando o texto. A regra que
+ * resolve os dois casos sem ambiguidade: rótulo ÚNICO, sem ponto nenhum
+ * ("outlet360") só pode ser o slug padrão, então completa com
+ * `.shoppub.com.br`; qualquer coisa com ponto (`outlet360.shoppub.com.br`,
+ * `outlet360.com.br`, `www.outlet360.com.br`) já É um host de verdade — usa
+ * como veio (só tira o `www.` de canto, colagem comum do navegador).
  */
 export function normalizarSubdominio(entrada: string): string | null {
-  const limpo = entrada.trim().toLowerCase();
+  let limpo = entrada.trim().toLowerCase();
   if (!limpo) return null;
-  const semProtocolo = limpo.replace(/^https?:\/\//, "");
-  const host = semProtocolo.split("/")[0] ?? "";
-  const primeiroRotulo = host.split(".")[0] ?? "";
-  if (!/^[a-z0-9-]{2,63}$/.test(primeiroRotulo)) return null;
-  return primeiroRotulo;
+  limpo = limpo.replace(/^https?:\/\//, "");
+  limpo = limpo.split("/")[0] ?? "";
+  limpo = limpo.replace(/^www\./, "");
+  if (!limpo) return null;
+  // Um rótulo (`outlet360`) OU vários separados por ponto (`outlet360.com.br`)
+  // — o `*` no grupo do ponto cobre os dois formatos na mesma regra.
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(limpo)) return null;
+  return limpo.includes(".") ? limpo : `${limpo}.shoppub.com.br`;
 }
 
 interface ExtraFields {
