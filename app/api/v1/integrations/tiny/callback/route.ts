@@ -89,6 +89,14 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const opaqueWebhookSecret = await admin.rpc("fn_encrypt_oauth", {
     plaintext: "tiny-nao-usa-webhook",
   });
+  if (opaqueWebhookSecret.error || !opaqueWebhookSecret.data) {
+    await audit({
+      action: "tiny.oauth_failed",
+      organizationId: state.orgId,
+      metadata: { reason: "encrypt_failed", error: opaqueWebhookSecret.error?.message ?? "no_data" },
+    });
+    return redirectTo(`/app/integrations/tiny?error=encrypt_failed`);
+  }
 
   const { data: integration, error: upsertErr } = await admin
     .from("tenant_integrations")
@@ -102,8 +110,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         scopes: ["openid"],
         status: "healthy",
         store_metadata: {},
-        webhook_path_token: "",
-        webhook_secret_encrypted: opaqueWebhookSecret.data ?? "",
+        // Sem valor explícito: cai no default da coluna
+        // (`encode(gen_random_bytes(24), 'hex')`) — string vazia arriscava
+        // colidir com outra integração sem webhook no futuro, já que a
+        // coluna não tem UNIQUE mas é pensada pra ser um token de verdade.
+        webhook_secret_encrypted: opaqueWebhookSecret.data,
         webhook_subscriptions: {},
         last_sync_at: null,
       },
