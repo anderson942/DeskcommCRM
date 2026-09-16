@@ -72,16 +72,47 @@ export class ShoppubApiClient {
     return url.toString();
   }
 
+  /**
+   * Segue redirect (301/302/303/307/308) À MÃO, reanexando o Authorization em
+   * cada salto.
+   *
+   * ⚠️ O `fetch` (nativo, undici, e o curl com `-L`) DERRUBA o header
+   * `Authorization` quando o redirect troca de ORIGEM — medido em produção
+   * (2026-09-16): a loja tem domínio próprio SEM `www` cadastrado com esse
+   * cliente Shoppub, então `outlet360.com.br` responde 301 pra
+   * `www.outlet360.com.br` (host DIFERENTE = origem diferente), e o segundo
+   * request chegava sem token nenhum — `{"detail":"As credenciais de
+   * autenticação não foram fornecidas."}`, com o MESMO token que funciona
+   * direto contra `www.outlet360.com.br`. A mensagem que chegava pro
+   * operador ("token recusado") apontava pro lugar errado: o token estava
+   * certo, o problema era o fetch tratando a troca de host como razão de
+   * segurança pra não repassar a credencial — que é o comportamento CERTO
+   * do fetch num caso genérico (redirect pra domínio de terceiro), só que
+   * aqui os dois hosts são a MESMA loja.
+   */
   private async request<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
+    let url = this.url(path, params);
     let res: Response;
-    try {
-      res = await fetch(this.url(path, params), {
-        method: "GET",
-        headers: { Authorization: `Token ${this.token}`, Accept: "application/json" },
-        cache: "no-store",
-      });
-    } catch (err) {
-      throw new ShoppubApiError(0, "network_error", String((err as Error).message));
+    const MAX_REDIRECTS = 5;
+
+    for (let salto = 0; ; salto++) {
+      try {
+        res = await fetch(url, {
+          method: "GET",
+          headers: { Authorization: `Token ${this.token}`, Accept: "application/json" },
+          redirect: "manual",
+          cache: "no-store",
+        });
+      } catch (err) {
+        throw new ShoppubApiError(0, "network_error", String((err as Error).message));
+      }
+
+      if (![301, 302, 303, 307, 308].includes(res.status)) break;
+      const local = res.headers.get("location");
+      if (!local || salto >= MAX_REDIRECTS) {
+        throw new ShoppubApiError(res.status, "too_many_redirects", "", "Redirecionamento demais ao alcançar a loja.");
+      }
+      url = new URL(local, url).toString();
     }
 
     const text = await res.text();
