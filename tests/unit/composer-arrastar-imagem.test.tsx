@@ -177,7 +177,7 @@ describe("Composer — arrastar imagem de outra aba", () => {
     expect(seguiu, "preventDefault continua obrigatório mesmo sem anexar").toBe(false);
   });
 
-  it("com anexo já em preview, o drop não substitui em silêncio o que o operador escolheu", async () => {
+  it("com anexo já em preview, o drop ACRESCENTA ao lote — é como se monta um lote de várias fotos", async () => {
     renderComposer();
     fireEvent.click(screen.getByRole("button", { name: /anexar/i }));
     const inputDoc = document.querySelector('input[accept^=".pdf"]') as HTMLInputElement;
@@ -190,6 +190,7 @@ describe("Composer — arrastar imagem de outra aba", () => {
     fireEvent.drop(dropZone(), { dataTransfer: dropData({ files: [png()] }) });
 
     expect(screen.getByText("contrato-assinado.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enviar 2" })).toBeInTheDocument();
   });
 
   it("composer desabilitado ignora o drop", () => {

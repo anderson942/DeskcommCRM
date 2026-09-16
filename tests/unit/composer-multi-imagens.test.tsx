@@ -44,6 +44,13 @@ function png(nome: string) {
   return new File([new Uint8Array([1, 2, 3])], nome, { type: "image/png" });
 }
 
+/** DataTransfer falso de um `drop` — só o que os handlers leem. */
+function dropData(files: File[]) {
+  return { files, items: [], getData: () => "" } as unknown as DataTransfer;
+}
+
+const dropZone = () => screen.getByTestId("composer-drop-zone");
+
 describe("Composer — multi-imagens", () => {
   beforeEach(() => {
     uploadMock.mockClear();
@@ -145,6 +152,34 @@ describe("Composer — multi-imagens", () => {
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Enviar 2" })).toBeInTheDocument();
+  });
+
+  /**
+   * O BUG RELATADO (2026-09-16): "consigo arrastar múltiplas imagens, mas o
+   * popup só mostra uma e só manda a primeira". A causa era o composer tratar
+   * "já tem um anexo pendente" como MOTIVO PRA IGNORAR o próximo drop — a
+   * regra certa pra 1 arquivo (não deixar uma colagem sem querer substituir o
+   * que já estava escolhido) virou a regra ERRADA pra vários, porque quem
+   * arrasta de uma página só consegue segurar UM elemento por vez: um lote de
+   * 3 fotos são 3 gestos de drag separados, não um só.
+   */
+  it("arrastar uma foto, depois outra, monta um lote — não ignora a segunda", async () => {
+    renderComposer();
+    fireEvent.drop(dropZone(), { dataTransfer: dropData([png("a.png")]) });
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^enviar$/i })).toBeInTheDocument(); // ainda é 1
+
+    fireEvent.drop(dropZone(), { dataTransfer: dropData([png("b.png")]) });
+    expect(await screen.findByRole("button", { name: "Enviar 2" })).toBeInTheDocument();
+
+    fireEvent.drop(dropZone(), { dataTransfer: dropData([png("c.png")]) });
+    expect(await screen.findByRole("button", { name: "Enviar 3" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Enviar 3" }));
+    await waitFor(() => expect(sendMock).toHaveBeenCalledTimes(3));
+    expect(sendMock).toHaveBeenNthCalledWith(1, expect.objectContaining({ media_storage_path: "org/conv/a.png" }));
+    expect(sendMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ media_storage_path: "org/conv/b.png" }));
+    expect(sendMock).toHaveBeenNthCalledWith(3, expect.objectContaining({ media_storage_path: "org/conv/c.png" }));
   });
 });
 

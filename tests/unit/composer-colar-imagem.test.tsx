@@ -143,7 +143,7 @@ describe("Composer — colar imagem", () => {
     expect(seguiu).toBe(true);
   });
 
-  it("com anexo já em preview, colar não substitui em silêncio o que o operador escolheu", async () => {
+  it("com anexo já em preview, colar ACRESCENTA ao lote — não substitui nem ignora", async () => {
     renderComposer();
     fireEvent.click(screen.getByRole("button", { name: /anexar/i }));
     const inputDoc = document.querySelector('input[accept^=".pdf"]') as HTMLInputElement;
@@ -155,7 +155,10 @@ describe("Composer — colar imagem", () => {
 
     fireEvent.paste(campo(), { clipboardData: clipboard({ files: [png()] }) });
 
+    // O documento continua — E agora existe um lote de 2, não porque a
+    // colagem foi ignorada, mas porque ela se somou ao que já estava lá.
     expect(screen.getByText("contrato-assinado.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enviar 2" })).toBeInTheDocument();
   });
 
   it("composer desabilitado ignora a colagem", () => {

@@ -219,18 +219,18 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * validação, o toast de erro e o retry já vivem lá. Cola mais de uma imagem
    * de uma vez (raro, mas existe) → mesmo preview em lote do multi-select.
    *
-   * As três guardas antes de olhar o clipboard não são zelo: em "Nota interna"
-   * não existe anexo (a nota é só texto e o envio nem passa pelo upload), com
-   * um anexo já em preview a colagem substituiria em silêncio o que o operador
-   * escolheu, e desabilitado é desabilitado. Em qualquer um desses casos o
-   * Ctrl+V precisa continuar sendo o Ctrl+V de sempre.
+   * Com um anexo já em preview, a colagem ACRESCENTA ao lote em vez de
+   * substituir — é o que faz "solte uma foto, depois outra, depois outra"
+   * virar um lote de 3 em vez de travar na primeira (medido: o pedido de
+   * multi-imagem existe justamente pra isso). Guarda de "nota interna"/campo
+   * travado continua: nenhum dos dois tem anexo.
    */
   function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
-    if (mode !== "reply" || respostaBarrada || pendingFiles.length > 0) return;
+    if (mode !== "reply" || respostaBarrada) return;
     const imagens = imagensDoClipboard(e.clipboardData, new Date());
     if (imagens.length === 0) return; // colagem de texto segue o caminho normal do browser
     e.preventDefault();
-    setPendingFiles(imagens);
+    setPendingFiles((atual) => [...atual, ...imagens]);
   }
 
   /**
@@ -262,11 +262,14 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   }
 
   async function processarImagemArrastada(dados: DataTransfer) {
-    if (mode !== "reply" || respostaBarrada || pendingFiles.length > 0) return;
+    if (mode !== "reply" || respostaBarrada) return;
 
+    // ACRESCENTA ao lote — não substitui: arrastar uma foto, depois outra, é
+    // o gesto natural de montar um lote, um drag por vez (o navegador só
+    // deixa segurar UM elemento de cada vez ao arrastar de uma página).
     const arquivos = imagensDoClipboard(dados, new Date());
     if (arquivos.length > 0) {
-      setPendingFiles(arquivos);
+      setPendingFiles((atual) => [...atual, ...arquivos]);
       return;
     }
 
@@ -281,7 +284,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     try {
       const baixadas = await Promise.all(urls.map(buscarImagemExterna));
       const ok = baixadas.filter((f): f is File => f !== null);
-      if (ok.length > 0) setPendingFiles(ok);
+      if (ok.length > 0) setPendingFiles((atual) => [...atual, ...ok]);
     } finally {
       setBuscandoImagemArrastada(false);
     }
@@ -410,7 +413,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           {mode === "reply" && (
             <AttachMenu
               disabled={respostaBarrada}
-              onPick={setPendingFiles}
+              onPick={(novos) => setPendingFiles((atual) => [...atual, ...novos])}
               onPickContact={() => setContactPickerOpen(true)}
             />
           )}
