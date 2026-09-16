@@ -20,12 +20,24 @@ interface Props {
   onClose: () => void;
 }
 
-/** Um par rótulo/valor da ficha — omitido inteiro quando o valor é vazio, não mostra "—". */
+/**
+ * Rótulo em cima, valor embaixo — não lado a lado.
+ *
+ * ⚠️ A versão anterior era `flex justify-between` com rótulo e valor como
+ * irmãos: um item flex, sem `min-w-0`, não encolhe abaixo do tamanho do
+ * próprio conteúdo — é a armadilha clássica do Tailwind/flexbox. Medido em
+ * produção (2026-09-16): nome de produto longo ("Calça VersatiOld
+ * Alfaiataria Premium Slim Cinza 38 40 42 44 46 48 50 - 50", comum na
+ * Shoppub, que concatena TODAS as variações de tamanho no nome) e uma linha
+ * de categoria com 8+ nomes juntos vazavam pra fora da caixa do dialog em
+ * vez de quebrar linha. Empilhado, cada valor é um bloco comum — quebra
+ * sozinho, sem precisar calcular `min-w` nenhum.
+ */
 function Linha({ rotulo, children }: { rotulo: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-1.5 text-sm">
-      <span className="text-muted-foreground">{rotulo}</span>
-      <span className="text-right font-medium">{children}</span>
+    <div className="py-1.5 text-sm">
+      <p className="text-xs text-muted-foreground">{rotulo}</p>
+      <p className="font-medium break-words">{children}</p>
     </div>
   );
 }
@@ -38,8 +50,8 @@ export function ProdutoDetalheDialog({ produto, onClose }: Props) {
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <span className="truncate">{produto.nome}</span>
+          <DialogTitle className="flex flex-wrap items-center gap-2 break-words pr-6">
+            <span>{produto.nome}</span>
             {!produto.ativo && <Badge variant="secondary">{t("Inativo")}</Badge>}
           </DialogTitle>
         </DialogHeader>

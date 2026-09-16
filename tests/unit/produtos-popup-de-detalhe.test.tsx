@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 /**
@@ -63,6 +63,34 @@ describe("popup de detalhe do produto", () => {
     expect(dialog).toHaveTextContent("Shoppub");
     const link = screen.getByRole("link", { name: /ver na loja/i });
     expect(link).toHaveAttribute("href", "https://www.outlet360.com.br/produto/bone-rl-classic-chumbo/");
+  });
+
+  /**
+   * O BUG RELATADO (2026-09-16): nome de produto longo ("Calça VersatiOld
+   * Alfaiataria Premium Slim Cinza 38 40 42 44 46 48 50 - 50", comum na
+   * Shoppub) e uma linha de preço/categoria vazavam pra fora da caixa do
+   * dialog. Causa: `flex justify-between` com rótulo/valor como IRMÃOS —
+   * item flex sem `min-w-0` não encolhe abaixo do próprio conteúdo, então
+   * `truncate` (que depende de conseguir encolher) simplesmente não fazia
+   * nada e o texto vazava. Rótulo em cima, valor embaixo é imune à classe
+   * inteira desse bug — não tem irmão flex pra disputar espaço.
+   */
+  it("nome longo (concatena todas as variações, comum na Shoppub) não usa truncate/nowrap que vazava da caixa", async () => {
+    const nomeLongo =
+      "Calça VersatiOld Alfaiataria Premium Slim Cinza 38 40 42 44 46 48 50 - 50";
+    montar([produto({ nome: nomeLongo })]);
+
+    fireEvent.click(screen.getByTestId("abrir-detalhe-BONE-RL-01"));
+    const dialog = await screen.findByRole("dialog");
+
+    expect(dialog).toHaveTextContent(nomeLongo);
+    const titulo = within(dialog).getByText(nomeLongo);
+    // `truncate` (overflow:hidden + nowrap) é exatamente a classe que causou
+    // o vazamento — sem `min-w-0` no pai flex ela não encolhe, só empurra o
+    // texto pra fora da caixa. Título e valores agora quebram linha
+    // (`break-words`), nunca cortam com nowrap.
+    expect(titulo.className).not.toContain("truncate");
+    expect(titulo.closest('[class*="justify-between"]')).toBeNull();
   });
 
   it("produto sem marca/categoria/link não mostra essas linhas nem quebra", async () => {
