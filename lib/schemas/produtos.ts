@@ -141,10 +141,12 @@ export interface Produto {
   ativo: boolean;
   origem: string;
   imagem_url: string | null;
+  /** Link da página do produto na loja — só quando a origem expõe isso (Shoppub). `null` pro resto. */
+  url_produto: string | null;
   updated_at: string;
 }
 
 /** As colunas que a tela e a rota leem — uma lista, não duas. */
 export const COLUNAS_DO_PRODUTO =
   "id, codigo, nome, descricao, marca, categoria, preco_cents, preco_original_cents, moeda, custo_cents, " +
-  "controla_estoque, quantidade, ativo, origem, imagem_url, updated_at";
+  "controla_estoque, quantidade, ativo, origem, imagem_url, url_produto, updated_at";

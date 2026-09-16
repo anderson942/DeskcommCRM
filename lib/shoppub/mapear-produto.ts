@@ -18,7 +18,14 @@ function precoOriginalCents(p: ShoppubProduto): number | null {
   return por < de ? de : null;
 }
 
-export function mapearProduto(p: ShoppubProduto, orgId: string) {
+/**
+ * O host vem de fora (não do produto): é o domínio DA LOJA, o mesmo que
+ * `tenant_integrations.store_metadata.subdominio` guarda pra montar a URL
+ * da API. Padrão confirmado contra a loja real (2026-09-16), não
+ * adivinhado: `GET https://www.outlet360.com.br/produto/{slug}/` → 200 num
+ * produto ativo de verdade.
+ */
+export function mapearProduto(p: ShoppubProduto, orgId: string, host: string) {
   return {
     organization_id: orgId,
     codigo: p.sku,
@@ -35,5 +42,6 @@ export function mapearProduto(p: ShoppubProduto, orgId: string) {
     quantidade: Math.max(0, (p.estoque ?? 0) - (p.estoque_reserva ?? 0)),
     ativo: p.ativo,
     origem: "shoppub",
+    url_produto: p.slug ? `https://${host}/produto/${p.slug}/` : null,
   };
 }

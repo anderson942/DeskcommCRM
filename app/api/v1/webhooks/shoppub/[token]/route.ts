@@ -98,7 +98,7 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       return ok({ accepted: true, ignored: true, reason: "produto_pai" });
     }
 
-    const linha = mapearProduto(produto, integration.organization_id);
+    const linha = mapearProduto(produto, integration.organization_id, subdominio);
     const { error: upsertErr } = await admin
       .from("catalog_products")
       .upsert(linha, { onConflict: "organization_id,codigo" });

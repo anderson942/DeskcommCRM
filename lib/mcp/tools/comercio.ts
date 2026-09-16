@@ -185,7 +185,7 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       const { data: lote, error, count } = await ctx.supabase
         .from("catalog_products")
         .select(
-          "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, controla_estoque, quantidade, ativo",
+          "id, codigo, nome, descricao, marca, categoria, preco_cents, moeda, controla_estoque, quantidade, ativo, url_produto",
           { count: "exact" },
         )
         .eq("organization_id", ctx.organizationId)
@@ -228,6 +228,7 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
       moeda: string;
       controla_estoque: boolean;
       quantidade: number;
+      url_produto: string | null;
     };
 
     const { achados, ignorados } = buscarComRelaxamento((data ?? []) as Linha[], input.termo);
@@ -288,6 +289,7 @@ export const crmSearchProducts: McpToolDefinition<typeof produtosInputShape> = {
         preco_cents: produto.preco_cents,
         ...(produto.marca ? { marca: produto.marca } : {}),
         ...(produto.descricao ? { descricao: produto.descricao } : {}),
+        ...(produto.url_produto ? { link: produto.url_produto } : {}),
         disponivel: !produto.controla_estoque || produto.quantidade > 0,
       })),
       empate,

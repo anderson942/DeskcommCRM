@@ -82,7 +82,7 @@ async function sincronizarOrganizacao(
 
     const vendaveis = resposta.results.filter(ehVendavel);
     if (vendaveis.length > 0) {
-      const linhas = vendaveis.map((p) => mapearProduto(p, row.organization_id));
+      const linhas = vendaveis.map((p) => mapearProduto(p, row.organization_id, subdominio));
       const { error } = await admin
         .from("catalog_products")
         .upsert(linhas, { onConflict: "organization_id,codigo" });
