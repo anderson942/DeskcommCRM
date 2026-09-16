@@ -1,15 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiClient } from "@/lib/api/client";
+import type { ApiSuccess } from "@/lib/api/wrappers";
 import { formatCents } from "@/lib/money";
 import { precoParaCentavos, type Produto } from "@/lib/schemas/produtos";
+
+type FiltroEstoque = "todos" | "disponivel" | "esgotado";
+type Tamanho = 10 | 25 | 50 | 100 | "tudo";
+/** Tem que bater com `TAMANHOS_VALIDOS` de `app/api/v1/products/route.ts`. */
+const TAMANHOS_VALIDOS = [10, 25, 50, 100] as const;
 
 interface Textos {
   titulo: string;
@@ -71,30 +77,82 @@ function doRascunho(
 
 export function ProdutosClient({
   inicial,
+  totalInicial,
+  tamanhoInicial,
   podeEditar,
   textos,
 }: {
   inicial: Produto[];
+  totalInicial: number;
+  tamanhoInicial: number;
   podeEditar: boolean;
   textos: Textos;
 }) {
   const t = useT();
-  const router = useRouter();
+  const [buscaDigitada, setBuscaDigitada] = React.useState("");
   const [busca, setBusca] = React.useState("");
+  const [pagina, setPagina] = React.useState(1);
+  const [tamanho, setTamanho] = React.useState<Tamanho>(tamanhoInicial as Tamanho);
+  const [filtroEstoque, setFiltroEstoque] = React.useState<FiltroEstoque>("todos");
+  const [produtos, setProdutos] = React.useState<Produto[]>(inicial);
+  const [total, setTotal] = React.useState(totalInicial);
+  const [carregando, setCarregando] = React.useState(false);
   const [criando, setCriando] = React.useState(false);
   const [rascunho, setRascunho] = React.useState<Rascunho>(VAZIO);
   const [salvando, setSalvando] = React.useState(false);
   const [importando, setImportando] = React.useState(false);
   const [resumo, setResumo] = React.useState<ResumoDaImportacao | null>(null);
   const arquivoRef = React.useRef<HTMLInputElement>(null);
+  // Incrementar isto força o efeito de busca a rodar de novo com os MESMOS
+  // filtros — é o que substitui o antigo `router.refresh()` (que só refazia
+  // a busca quando ela morava no server component; agora mora aqui).
+  const [versao, setVersao] = React.useState(0);
+  const recarregarPaginaAtual = React.useCallback(() => setVersao((v) => v + 1), []);
 
-  const filtrados = React.useMemo(() => {
-    const q = busca.trim().toLowerCase();
-    if (q === "") return inicial;
-    return inicial.filter((p) =>
-      [p.nome, p.codigo, p.marca ?? "", p.categoria ?? ""].join(" ").toLowerCase().includes(q),
-    );
-  }, [inicial, busca]);
+  // Debounce da busca — 400ms sem digitar antes de virar requisição pro
+  // servidor. Cada tecla vira um round-trip agora (a busca deixou de filtrar
+  // em memória), então não debounçar afogaria a rota a cada letra.
+  React.useEffect(() => {
+    const timer = setTimeout(() => setBusca(buscaDigitada), 400);
+    return () => clearTimeout(timer);
+  }, [buscaDigitada]);
+
+  // Qualquer filtro novo volta pra página 1 — senão a pessoa pode ficar
+  // numa página 8 que não existe mais depois de estreitar o resultado.
+  React.useEffect(() => {
+    setPagina(1);
+  }, [busca, tamanho, filtroEstoque]);
+
+  React.useEffect(() => {
+    const controller = new AbortController();
+    setCarregando(true);
+    const params = new URLSearchParams();
+    if (busca) params.set("busca", busca);
+    params.set("pagina", String(pagina));
+    params.set("tamanho", String(tamanho));
+    if (filtroEstoque !== "todos") params.set("estoque", filtroEstoque);
+
+    apiClient
+      .get<ApiSuccess<Produto[]>>(`/api/v1/products?${params.toString()}`, { signal: controller.signal })
+      .then((res) => {
+        setProdutos(res.data);
+        setTotal((res.meta?.total as number | undefined) ?? res.data.length);
+      })
+      .catch((e) => {
+        if (controller.signal.aborted) return;
+        showApiError(e);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCarregando(false);
+      });
+
+    return () => controller.abort();
+  }, [busca, pagina, tamanho, filtroEstoque, versao]);
+
+  const tamanhoNumerico = tamanho === "tudo" ? total || 1 : tamanho;
+  const totalPaginas = Math.max(1, Math.ceil(total / tamanhoNumerico));
+  const inicioDaPagina = total === 0 ? 0 : (pagina - 1) * tamanhoNumerico + 1;
+  const fimDaPagina = Math.min(total, pagina * tamanhoNumerico);
 
   async function salvar() {
     const corpo = doRascunho(rascunho, t);
@@ -108,7 +166,7 @@ export function ProdutosClient({
       toast.success(t("Produto cadastrado"));
       setRascunho(VAZIO);
       setCriando(false);
-      router.refresh();
+      recarregarPaginaAtual();
     } catch (e) {
       showApiError(e);
     } finally {
@@ -134,7 +192,7 @@ export function ProdutosClient({
       // O resumo fica NA TELA, não num toast que some em 4 segundos: quem
       // importou 300 produtos precisa ler quais linhas foram recusadas e por quê.
       setResumo(json.data);
-      router.refresh();
+      recarregarPaginaAtual();
     } catch {
       toast.error(t("Não consegui enviar o arquivo."));
     } finally {
@@ -147,7 +205,7 @@ export function ProdutosClient({
     try {
       await apiClient.patch(`/api/v1/products/${p.id}`, { ativo: !p.ativo });
       toast.success(t(p.ativo ? "Produto desativado" : "Produto reativado"));
-      router.refresh();
+      recarregarPaginaAtual();
     } catch (e) {
       showApiError(e);
     }
@@ -160,10 +218,10 @@ export function ProdutosClient({
         <p className="mt-1 text-sm text-muted-foreground">{textos.subtitulo}</p>
       </header>
 
-      <div className="mb-4 flex items-center gap-3">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
         <input
-          value={busca}
-          onChange={(e) => setBusca(e.target.value)}
+          value={buscaDigitada}
+          onChange={(e) => setBuscaDigitada(e.target.value)}
           placeholder={t("Buscar por nome, código ou marca")}
           className="h-9 w-full max-w-sm rounded-md border px-3 text-sm"
           data-testid="busca-produto"
@@ -194,6 +252,52 @@ export function ProdutosClient({
             </Button>
           </>
         ) : null}
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1 rounded-md border p-0.5">
+          {(
+            [
+              { valor: "todos", rotulo: t("Todos") },
+              { valor: "disponivel", rotulo: t("Em estoque") },
+              { valor: "esgotado", rotulo: t("Esgotado") },
+            ] as const
+          ).map(({ valor, rotulo }) => (
+            <button
+              key={valor}
+              type="button"
+              onClick={() => setFiltroEstoque(valor)}
+              data-testid={`filtro-estoque-${valor}`}
+              className={`rounded-sm px-2.5 py-1 text-xs ${
+                filtroEstoque === valor
+                  ? "bg-foreground text-background"
+                  : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              {rotulo}
+            </button>
+          ))}
+        </div>
+
+        <Select value={String(tamanho)} onValueChange={(v) => setTamanho((v === "tudo" ? "tudo" : Number(v)) as Tamanho)}>
+          <SelectTrigger className="h-8 w-[140px] text-xs" data-testid="tamanho-pagina">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TAMANHOS_VALIDOS.map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n} {t("por página")}
+              </SelectItem>
+            ))}
+            <SelectItem value="tudo">{t("Tudo")}</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <span className="text-xs text-muted-foreground">
+          {total === 0
+            ? t("Nenhum produto")
+            : `${inicioDaPagina}–${fimDaPagina} ${t("de")} ${total}`}
+        </span>
       </div>
 
       {podeEditar ? (
@@ -339,14 +443,17 @@ export function ProdutosClient({
         </div>
       ) : null}
 
-      {filtrados.length === 0 ? (
+      {produtos.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center" data-testid="produtos-vazio">
-          <p className="font-medium">{textos.vazio}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{textos.vazioDica}</p>
+          <p className="font-medium">{carregando ? t("Carregando…") : textos.vazio}</p>
+          {carregando ? null : <p className="mt-1 text-sm text-muted-foreground">{textos.vazioDica}</p>}
         </div>
       ) : (
-        <ul className="divide-y rounded-lg border" data-testid="lista-produtos">
-          {filtrados.map((p) => (
+        <ul
+          className={`divide-y rounded-lg border ${carregando ? "opacity-60" : ""}`}
+          data-testid="lista-produtos"
+        >
+          {produtos.map((p) => (
             <li key={p.id} className="flex items-center gap-4 p-3" data-testid={`produto-${p.codigo}`}>
               <div className="min-w-0 flex-1">
                 <p className={`truncate font-medium ${p.ativo ? "" : "text-muted-foreground line-through"}`}>
@@ -377,6 +484,32 @@ export function ProdutosClient({
           ))}
         </ul>
       )}
+
+      {tamanho !== "tudo" && totalPaginas > 1 ? (
+        <div className="mt-4 flex items-center justify-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pagina <= 1}
+            onClick={() => setPagina((p) => Math.max(1, p - 1))}
+            data-testid="pagina-anterior"
+          >
+            {t("Anterior")}
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            {t("Página")} {pagina} {t("de")} {totalPaginas}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pagina >= totalPaginas}
+            onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+            data-testid="pagina-proxima"
+          >
+            {t("Próxima")}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

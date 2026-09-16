@@ -37,18 +37,24 @@ export default async function ProdutosPage() {
 
   const podeEditar = (user.is_platform_admin && !user.support) || ROLE_RANK[activeOrg.role] >= ROLE_RANK.manager;
 
+  // Mesmo default que o cliente usa na primeira busca — a tela troca pra
+  // paginação real (`/api/v1/products?pagina=&tamanho=&estoque=`) a partir
+  // daqui, mas a primeira página já vem pronta no HTML, sem round-trip extra.
+  const TAMANHO_PADRAO = 25;
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, count } = await supabase
     .from("catalog_products")
-    .select(COLUNAS_DO_PRODUTO)
+    .select(COLUNAS_DO_PRODUTO, { count: "exact" })
     .eq("organization_id", activeOrg.orgId)
     .order("ativo", { ascending: false })
     .order("nome")
-    .limit(500);
+    .range(0, TAMANHO_PADRAO - 1);
 
   return (
     <ProdutosClient
       inicial={(data ?? []) as unknown as Produto[]}
+      totalInicial={count ?? 0}
+      tamanhoInicial={TAMANHO_PADRAO}
       podeEditar={podeEditar}
       textos={{
         titulo: t("Produtos"),

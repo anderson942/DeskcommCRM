@@ -27,7 +27,11 @@ import { describe, expect, it, vi } from "vitest";
  */
 
 vi.mock("@/lib/api/client", () => ({
-  apiClient: { post: vi.fn(), patch: vi.fn() },
+  // `get` nunca resolve de propósito: este arquivo testa a formatação do
+  // PREÇO INICIAL (prop `inicial`), não o fetch de paginação — uma promise
+  // pendente mantém `produtos` no valor inicial durante o teste inteiro, sem
+  // precisar coordenar um mock por chamada.
+  apiClient: { get: vi.fn(() => new Promise(() => {})), post: vi.fn(), patch: vi.fn() },
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/components/feedback/ApiErrorToast", () => ({ showApiError: vi.fn() }));
@@ -64,7 +68,15 @@ function produto(over: Partial<Produto> = {}): Produto {
 const TEXTOS = { titulo: "Produtos", subtitulo: "", vazio: "", vazioDica: "" };
 
 function montar(itens: Produto[]) {
-  render(<ProdutosClient inicial={itens} podeEditar={false} textos={TEXTOS} />);
+  render(
+    <ProdutosClient
+      inicial={itens}
+      totalInicial={itens.length}
+      tamanhoInicial={25}
+      podeEditar={false}
+      textos={TEXTOS}
+    />,
+  );
 }
 
 /** O `Intl` emite NBSP (U+00A0) ou narrow NBSP (U+202F) entre símbolo e número. */

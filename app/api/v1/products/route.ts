@@ -20,31 +20,55 @@ import { traduzir } from "@/lib/i18n/dicionario";
 
 export const dynamic = "force-dynamic";
 
+/** Tamanhos de página aceitos — "tudo" existe, mas com teto: um catálogo
+ * sincronizado (ex.: Tiny) pode ter dezenas de milhares de linhas, e renderizar
+ * tudo isso de uma vez trava a aba em vez de ajudar quem só queria ver mais. */
+const TAMANHOS_VALIDOS = [10, 25, 50, 100] as const;
+const TETO_TUDO = 2000;
+
+function paginaEhTamanho(req: NextRequest): { pagina: number; tamanho: number } {
+  const params = req.nextUrl.searchParams;
+  const pagina = Math.max(1, Number.parseInt(params.get("pagina") ?? "1", 10) || 1);
+  const brutoTamanho = params.get("tamanho");
+  if (brutoTamanho === "tudo") return { pagina: 1, tamanho: TETO_TUDO };
+  const n = Number.parseInt(brutoTamanho ?? "25", 10);
+  const tamanho = (TAMANHOS_VALIDOS as readonly number[]).includes(n) ? n : 25;
+  return { pagina, tamanho };
+}
+
 export async function GET(req: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   const authz = await requireRole("viewer", { requestId, resource: "catalog_products" });
   if (!authz.ok) return authz.response;
 
   const busca = req.nextUrl.searchParams.get("busca")?.trim() ?? "";
+  // "disponivel" = mais de 1 em estoque; "esgotado" = zerado. Quantidade
+  // exatamente 1 não entra em nenhum dos dois de propósito — foi o corte que
+  // o Anderson pediu (2026-09-15), não um descuido de "esqueceu do >=".
+  const estoque = req.nextUrl.searchParams.get("estoque");
+  const { pagina, tamanho } = paginaEhTamanho(req);
   const supabase = await createClient();
 
   let q = supabase
     .from("catalog_products")
-    .select(COLUNAS_DO_PRODUTO)
+    .select(COLUNAS_DO_PRODUTO, { count: "exact" })
     .eq("organization_id", authz.org.orgId);
 
   // A busca da TELA é substring simples, de propósito: quem opera a loja digita
   // o nome como cadastrou. A busca por token (que tolera "ifone") é a do
   // AGENTE, em `lib/catalogo/busca.ts`, e ela responde a outra pergunta.
   if (busca !== "") q = q.or(`nome.ilike.%${busca}%,codigo.ilike.%${busca}%,marca.ilike.%${busca}%`);
+  if (estoque === "disponivel") q = q.gt("quantidade", 1);
+  else if (estoque === "esgotado") q = q.eq("quantidade", 0);
 
-  const { data, error } = await q
+  const desde = (pagina - 1) * tamanho;
+  const { data, error, count } = await q
     .order("ativo", { ascending: false })
     .order("nome")
-    .limit(500);
+    .range(desde, desde + tamanho - 1);
 
   if (error) return fail("internal_error", "Erro ao listar os produtos.", 500, { requestId });
-  return ok(data ?? [], { requestId });
+  return ok(data ?? [], { requestId, meta: { total: count ?? 0, pagina, tamanho } });
 }
 
 export async function POST(req: NextRequest): Promise<Response> {
