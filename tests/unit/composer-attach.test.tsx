@@ -15,7 +15,7 @@ vi.mock("@/hooks/inbox/useUploadMedia", () => ({
   useUploadMedia: () => ({ mutateAsync: uploadMock, isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useSendMessage", () => ({
-  useSendMessage: () => ({ mutate: sendMock, isPending: false }),
+  useSendMessage: () => ({ mutate: sendMock, mutateAsync: sendMock, isPending: false }),
 }));
 
 import { Composer } from "@/components/inbox/Composer";
@@ -64,7 +64,6 @@ describe("Composer + anexos", () => {
           media_mime: "image/jpeg",
           media_size_bytes: 3,
         }),
-        expect.anything(),
       ),
     );
   });

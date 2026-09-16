@@ -4649,6 +4649,11 @@ export const DICIONARIO: Traducoes = {
   "Fotos e vídeos": { es: "Fotos y vídeos" },
   Documento: { es: "Documento" },
   "Enviar anexo": { es: "Enviar adjunto" },
+  "Enviar {n} anexos": { es: "Enviar {n} adjuntos" },
+  "Enviar {n}": { es: "Enviar {n}" },
+  "A legenda vai só na última foto, como no WhatsApp.": {
+    es: "La descripción va solo en la última foto, como en WhatsApp.",
+  },
   "Legenda (opcional)": { es: "Descripción (opcional)" },
   Legenda: { es: "Descripción" },
   "Gravar áudio": { es: "Grabar audio" },

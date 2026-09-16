@@ -14,21 +14,29 @@
  *     sem handler nenhum, o browser trata o drop como navegação para a URL.
  */
 
-export function urlDaImagemArrastada(dados: DataTransfer | null): string | null {
-  if (!dados) return null;
+/**
+ * Toda URL de imagem no `text/uri-list` (RFC 2483: uma URI por linha, `#` é
+ * comentário). Na prática quase sempre devolve 0 ou 1 — o drag nativo de uma
+ * `<img>` só deixa segurar UM elemento por vez —, mas o formato já é uma
+ * lista, e uma página com seleção múltipla própria pode preenchê-lo com mais.
+ */
+export function urlsDeImagensArrastadas(dados: DataTransfer | null): string[] {
+  if (!dados) return [];
 
   const uriList = dados.getData("text/uri-list");
   const daLista = uriList
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .find((l) => l && !l.startsWith("#"));
-  if (daLista) return daLista;
+    .filter((l) => l && !l.startsWith("#"));
+  if (daLista.length > 0) return daLista;
 
   // Fallback observado em alguns browsers: só `text/plain` vem preenchido.
   const plano = dados.getData("text/plain").trim();
-  if (/^https?:\/\//i.test(plano)) return plano;
+  return /^https?:\/\//i.test(plano) ? [plano] : [];
+}
 
-  return null;
+export function urlDaImagemArrastada(dados: DataTransfer | null): string | null {
+  return urlsDeImagensArrastadas(dados)[0] ?? null;
 }
 
 /** Nome pro arquivo baixado via URL — usa o nome real do arquivo quando dá. */

@@ -18,6 +18,7 @@ import { ConversationList } from "./ConversationList";
 import { InboxFilters, type InboxFiltersValue, type InboxTab } from "./InboxFilters";
 import { ChatThread } from "./ChatThread";
 import { Composer, type ComposerHandle } from "./Composer";
+import { ConversationDropZone } from "./ConversationDropZone";
 import { ConversationHeader } from "./ConversationHeader";
 import { RetentionNotice } from "./RetentionNotice";
 import { CRMSidePanel } from "./CRMSidePanel";
@@ -474,7 +475,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
           </div>
         )}
         {selectedConversation ? (
-          <>
+          <ConversationDropZone composerRef={composerRef}>
             <ConversationHeader conversation={selectedConversation} />
             <div className="min-h-0 flex-1 overflow-hidden">
               <ChatThread conversationId={selectedConversation.id} onResponder={setRespondendo} />
@@ -498,7 +499,7 @@ export function InboxLayout({ initialSelectedId = null }: InboxLayoutProps = {})
               onCancelarResposta={() => setRespondendo(null)}
               currentContactId={selectedConversation.contact_id}
             />
-          </>
+          </ConversationDropZone>
         ) : selectionNotFound ? (
           <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted-foreground">
             {t("Conversa não encontrada ou fora do seu acesso.")}

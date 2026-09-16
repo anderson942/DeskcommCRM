@@ -25,7 +25,7 @@ vi.mock("@/hooks/inbox/useUploadMedia", () => ({
   useUploadMedia: () => ({ mutateAsync: uploadMock, isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useSendMessage", () => ({
-  useSendMessage: () => ({ mutate: sendMock, isPending: false }),
+  useSendMessage: () => ({ mutate: sendMock, mutateAsync: sendMock, isPending: false }),
 }));
 
 import { Composer } from "@/components/inbox/Composer";
@@ -122,7 +122,6 @@ describe("Composer — colar imagem", () => {
     await waitFor(() =>
       expect(sendMock).toHaveBeenCalledWith(
         expect.objectContaining({ conversation_id: "conv-1", type: "image", body: "mirá esto" }),
-        expect.anything(),
       ),
     );
   });

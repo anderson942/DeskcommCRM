@@ -36,28 +36,50 @@ function ehImagem(tipo: string | undefined): boolean {
  *   ("image.png" em toda colagem), e um nome com horário é o que deixa o
  *   anexo rastreável depois, na lista de mídia da conversa.
  */
+/** Todo arquivo de imagem do clipboard/drag, na ordem em que o browser entregou. */
+function extrairImagens(dados: DataTransfer): File[] {
+  const daLista = Array.from(dados.files ?? []).filter((f) => ehImagem(f.type));
+  const fontes =
+    daLista.length > 0
+      ? daLista
+      : Array.from(dados.items ?? [])
+          .filter((i) => i.kind === "file" && ehImagem(i.type))
+          .map((i) => i.getAsFile())
+          .filter((f): f is File => f !== null);
+
+  // Arquivo de 0 byte existe (colagem/arraste de uma referência que o browser
+  // não conseguiu materializar) e subiria só para o servidor recusar com
+  // "Arquivo vazio" — melhor tratar como "não havia imagem" aqui.
+  return fontes.filter((f) => f.size > 0);
+}
+
 export function imagemDoClipboard(dados: DataTransfer | null, carimbo: Date): File | null {
   if (!dados) return null;
-
-  const daLista = Array.from(dados.files ?? []).find((f) => ehImagem(f.type));
-  const dosItens = daLista
-    ? null
-    : Array.from(dados.items ?? [])
-        .filter((i) => i.kind === "file" && ehImagem(i.type))
-        .map((i) => i.getAsFile())
-        .find((f): f is File => f !== null);
-
-  const arquivo = daLista ?? dosItens ?? null;
-  // Arquivo de 0 byte existe (colagem de uma referência que o browser não
-  // conseguiu materializar) e subiria só para o servidor recusar com
-  // "Arquivo vazio" — melhor tratar como "não havia imagem" e deixar o
-  // Ctrl+V seguir seu caminho normal.
-  if (!arquivo || arquivo.size <= 0) return null;
-
-  return new File([arquivo], nomeDaColagem(arquivo, carimbo), {
-    type: arquivo.type,
-    lastModified: arquivo.lastModified,
+  const [primeira] = extrairImagens(dados);
+  if (!primeira) return null;
+  return new File([primeira], nomeDaColagem(primeira, carimbo), {
+    type: primeira.type,
+    lastModified: primeira.lastModified,
   });
+}
+
+/**
+ * TODAS as imagens do clipboard/drag — seleção múltipla no picker do sistema,
+ * várias fotos coladas de uma vez, ou (mais raro) mais de um item no drag.
+ *
+ * Índice no nome só entra a partir da SEGUNDA imagem: um único print colado
+ * continua saindo como `imagem-colada-<hora>.png`, sem o `-1` que quebraria o
+ * nome que já existia antes de multi-imagem existir.
+ */
+export function imagensDoClipboard(dados: DataTransfer | null, carimbo: Date): File[] {
+  if (!dados) return [];
+  const fontes = extrairImagens(dados);
+  return fontes.map((arquivo, i) =>
+    new File([arquivo], nomeDaColagem(arquivo, carimbo, fontes.length > 1 ? i + 1 : undefined), {
+      type: arquivo.type,
+      lastModified: arquivo.lastModified,
+    }),
+  );
 }
 
 /**
@@ -67,11 +89,12 @@ export function imagemDoClipboard(dados: DataTransfer | null, carimbo: Date): Fi
  * sistema traz "orcamento.png"); só inventa quando o browser entregou o nome
  * genérico de print de tela, que é o caso de toda colagem de captura.
  */
-function nomeDaColagem(arquivo: File, carimbo: Date): string {
+function nomeDaColagem(arquivo: File, carimbo: Date, indice?: number): string {
   const generico = !arquivo.name || /^image\.[a-z0-9]+$/i.test(arquivo.name);
   if (!generico) return arquivo.name;
 
   const ext = EXT_POR_MIME[arquivo.type.split(";")[0]!.trim().toLowerCase()] ?? "png";
   const iso = carimbo.toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  return `imagem-colada-${iso}.${ext}`;
+  const sufixo = indice ? `-${indice}` : "";
+  return `imagem-colada-${iso}${sufixo}.${ext}`;
 }

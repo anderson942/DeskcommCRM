@@ -29,7 +29,7 @@ vi.mock("@/hooks/inbox/useUploadMedia", () => ({
   useUploadMedia: () => ({ mutateAsync: uploadMock, isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useSendMessage", () => ({
-  useSendMessage: () => ({ mutate: sendMock, isPending: false }),
+  useSendMessage: () => ({ mutate: sendMock, mutateAsync: sendMock, isPending: false }),
 }));
 vi.mock("sonner", () => ({ toast: { error: (...a: unknown[]) => toastErrorMock(...a), success: vi.fn() } }));
 
@@ -210,7 +210,6 @@ describe("Composer — arrastar imagem de outra aba", () => {
     await waitFor(() =>
       expect(sendMock).toHaveBeenCalledWith(
         expect.objectContaining({ conversation_id: "conv-1", type: "image" }),
-        expect.anything(),
       ),
     );
   });

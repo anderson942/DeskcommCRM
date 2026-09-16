@@ -24,13 +24,16 @@ import { useMessageTemplates, type MessageTemplate } from "@/hooks/inbox/useMess
 import { X } from "lucide-react";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
 import { useUploadMedia } from "@/hooks/inbox/useUploadMedia";
-import { imagemDoClipboard } from "@/lib/inbox/clipboard-image";
-import { nomeDaImagemArrastada, urlDaImagemArrastada } from "@/lib/inbox/drop-image";
+import { imagensDoClipboard } from "@/lib/inbox/clipboard-image";
+import { nomeDaImagemArrastada, urlsDeImagensArrastadas } from "@/lib/inbox/drop-image";
 import { interpolateTemplate } from "@/lib/inbox/template-vars";
 import { cn } from "@/lib/utils";
 
 export interface ComposerHandle {
   focus: () => void;
+  /** Chamado pelo `ConversationDropZone` quando o drop cai fora do composer
+   * (cabeçalho, mensagens) — mesma extração/guardas do drop local. */
+  handleExternalDrop: (dataTransfer: DataTransfer) => void;
 }
 
 interface Props {
@@ -78,12 +81,12 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 ) {
   const t = useT();
   const [text, setText] = useState("");
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [mode, setMode] = useState<"reply" | "note">("reply");
-  const [draggingOver, setDraggingOver] = useState(false);
   const [buscandoImagemArrastada, setBuscandoImagemArrastada] = useState(false);
+  const [enviandoLote, setEnviandoLote] = useState(false);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const send = useSendMessage();
   const upload = useUploadMedia();
@@ -94,6 +97,9 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
 
   useImperativeHandle(ref, () => ({
     focus: () => taRef.current?.focus(),
+    handleExternalDrop: (dataTransfer: DataTransfer) => {
+      void processarImagemArrastada(dataTransfer);
+    },
   }));
 
   // send/createNote fora do disable: o texto some na hora do envio; travar o campo
@@ -149,6 +155,51 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     );
   }
 
+  /**
+   * Envia o lote de anexos pendentes, um atrás do outro — não em paralelo:
+   * mensagens fora de ordem na conversa seriam mais confuso que o envio
+   * demorar um pouco mais, e o servidor de mídia (WAHA) recebe um upload de
+   * cada vez do jeito que ele já esperava antes de multi-imagem existir.
+   *
+   * A legenda vai SÓ na última foto (padrão WhatsApp: quem manda várias fotos
+   * com legenda vê o texto embaixo da última, não repetido em cada uma).
+   *
+   * Uma foto falhar não trava as outras — cada `mutateAsync` já dispara o
+   * próprio toast de erro (`useUploadMedia`/`useSendMessage`); aqui só evita
+   * que a exceção pare o `for` no meio do lote.
+   */
+  async function enviarLote(legenda: string) {
+    if (pendingFiles.length === 0) return;
+    setEnviandoLote(true);
+    // Quem falhou fica pro retry — fechar o dialog perderia a foto que não
+    // saiu. Um lote de 1 que falha continua igual ao comportamento de sempre:
+    // dialog aberto com o MESMO arquivo, pronto pra tentar de novo.
+    const naoEnviados: File[] = [];
+    try {
+      const ultimo = pendingFiles.length - 1;
+      for (let i = 0; i < pendingFiles.length; i++) {
+        const arquivo = pendingFiles[i]!;
+        try {
+          const uploaded = await upload.mutateAsync({ conversationId, file: arquivo });
+          await send.mutateAsync({
+            conversation_id: conversationId,
+            type: uploaded.kind,
+            body: i === ultimo ? legenda || undefined : undefined,
+            media_storage_path: uploaded.storage_path,
+            media_mime: uploaded.media_mime,
+            media_size_bytes: uploaded.media_size_bytes,
+          });
+        } catch {
+          // toast já disparado pelo onError de upload/send — segue pro próximo do lote
+          naoEnviados.push(arquivo);
+        }
+      }
+    } finally {
+      setEnviandoLote(false);
+      setPendingFiles(naoEnviados);
+    }
+  }
+
   function applyTemplate(t: MessageTemplate) {
     const filled = interpolateTemplate(t.body, { name: contactName ?? null });
     setText(filled);
@@ -165,7 +216,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   /**
    * Ctrl/Cmd+V com imagem no clipboard cai no MESMO caminho do menu "+":
    * abre o preview com legenda e envia por ali. Nada de atalho paralelo — a
-   * validação, o toast de erro e o retry já vivem lá.
+   * validação, o toast de erro e o retry já vivem lá. Cola mais de uma imagem
+   * de uma vez (raro, mas existe) → mesmo preview em lote do multi-select.
    *
    * As três guardas antes de olhar o clipboard não são zelo: em "Nota interna"
    * não existe anexo (a nota é só texto e o envio nem passa pelo upload), com
@@ -174,11 +226,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * Ctrl+V precisa continuar sendo o Ctrl+V de sempre.
    */
   function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
-    if (mode !== "reply" || respostaBarrada || pendingFile) return;
-    const imagem = imagemDoClipboard(e.clipboardData, new Date());
-    if (!imagem) return; // colagem de texto segue o caminho normal do browser
+    if (mode !== "reply" || respostaBarrada || pendingFiles.length > 0) return;
+    const imagens = imagensDoClipboard(e.clipboardData, new Date());
+    if (imagens.length === 0) return; // colagem de texto segue o caminho normal do browser
     e.preventDefault();
-    setPendingFile(imagem);
+    setPendingFiles(imagens);
   }
 
   /**
@@ -186,55 +238,70 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
    * pra dentro da conversa — mesmo caminho do Ctrl+V: cai no preview com
    * legenda, sem atalho paralelo pra validação/erro/retry.
    *
-   * `preventDefault` no `dragOver` é o que impede o defeito relatado: sem
-   * ele, o `drop` nem chega a disparar aqui, e o browser trata a imagem
-   * arrastada como navegação — é isso que abria a foto numa aba nova.
-   * Por isso ele roda SEMPRE, mesmo quando o drop não vai virar anexo (nota
-   * interna, campo travado) — o que muda nesses casos é só não mostrar o
-   * realce visual nem tentar anexar.
+   * Compartilhada entre o `onDrop` local (drop bem em cima do composer) e
+   * `handleExternalDrop` (exposto no ref — o `ConversationDropZone` chama
+   * quando o drop cai em qualquer outro lugar do painel, cabeçalho ou
+   * mensagens; o alvo real ao arrastar rápido entre duas telas é "em cima da
+   * conversa", não uma faixa de 60px lá embaixo).
    */
-  function onDragOver(e: DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    if (mode === "reply" && !respostaBarrada && !pendingFile) setDraggingOver(true);
-  }
-
-  function onDragLeave() {
-    setDraggingOver(false);
-  }
-
-  async function onDrop(e: DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    setDraggingOver(false);
-    if (mode !== "reply" || respostaBarrada || pendingFile) return;
-
-    const arquivo = imagemDoClipboard(e.dataTransfer, new Date());
-    if (arquivo) {
-      setPendingFile(arquivo);
-      return;
-    }
-
-    // Chrome materializa um File pra maioria das <img> arrastadas entre abas,
-    // mas nem sempre — aqui só sobrou a URL (text/uri-list). Busca pelo
-    // servidor porque o browser esbarraria em CORS na maioria dos CDNs.
-    const url = urlDaImagemArrastada(e.dataTransfer);
-    if (!url) return; // não era imagem nem link — solta sem travar nada
-
-    setBuscandoImagemArrastada(true);
+  /** Busca UMA url pela rota de proxy e devolve o File, ou `null` com o toast já disparado. */
+  async function buscarImagemExterna(url: string): Promise<File | null> {
     try {
       const res = await fetch(`/api/v1/media/fetch-external?url=${encodeURIComponent(url)}`);
       if (!res.ok) {
         const json = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
         toast.error(json?.error?.message || t("Não foi possível carregar essa imagem."));
-        return;
+        return null;
       }
       const blob = await res.blob();
-      const nome = nomeDaImagemArrastada(url, blob.type, new Date());
-      setPendingFile(new File([blob], nome, { type: blob.type }));
+      return new File([blob], nomeDaImagemArrastada(url, blob.type, new Date()), { type: blob.type });
     } catch {
       toast.error(t("Não foi possível carregar essa imagem."));
+      return null;
+    }
+  }
+
+  async function processarImagemArrastada(dados: DataTransfer) {
+    if (mode !== "reply" || respostaBarrada || pendingFiles.length > 0) return;
+
+    const arquivos = imagensDoClipboard(dados, new Date());
+    if (arquivos.length > 0) {
+      setPendingFiles(arquivos);
+      return;
+    }
+
+    // Chrome materializa File pra maioria das <img> arrastadas entre abas, mas
+    // nem sempre — aqui só sobrou a URL (text/uri-list, raramente mais de
+    // uma). Busca pelo servidor porque o browser esbarraria em CORS na
+    // maioria dos CDNs.
+    const urls = urlsDeImagensArrastadas(dados);
+    if (urls.length === 0) return; // não era imagem nem link — solta sem travar nada
+
+    setBuscandoImagemArrastada(true);
+    try {
+      const baixadas = await Promise.all(urls.map(buscarImagemExterna));
+      const ok = baixadas.filter((f): f is File => f !== null);
+      if (ok.length > 0) setPendingFiles(ok);
     } finally {
       setBuscandoImagemArrastada(false);
     }
+  }
+
+  /**
+   * `preventDefault` SEMPRE — mesmo fora do modo resposta — é o que impede o
+   * defeito relatado: sem ele o browser trata a imagem arrastada como
+   * navegação (abria numa aba nova). `stopPropagation` no drop evita que o
+   * `ConversationDropZone`, que escuta o painel inteiro por baixo, processe
+   * o MESMO drop de novo.
+   */
+  function onDragOver(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+  }
+
+  function onDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    void processarImagemArrastada(e.dataTransfer);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -266,14 +333,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
         onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
         onDrop={onDrop}
       >
-        {draggingOver && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center gap-2 border-2 border-dashed border-primary bg-background/90 text-sm font-medium text-primary">
-            {t("Solte para anexar a imagem")}
-          </div>
-        )}
         {buscandoImagemArrastada && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-background/90 text-sm text-muted-foreground">
             {t("Carregando imagem…")}
@@ -349,7 +410,7 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
           {mode === "reply" && (
             <AttachMenu
               disabled={respostaBarrada}
-              onPick={setPendingFile}
+              onPick={setPendingFiles}
               onPickContact={() => setContactPickerOpen(true)}
             />
           )}
@@ -427,29 +488,11 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
         </div>
       </div>
       <AttachmentPreviewDialog
-        file={pendingFile}
-        sending={upload.isPending || send.isPending}
-        onCancel={() => setPendingFile(null)}
-        onSend={async (caption) => {
-          if (!pendingFile) return;
-          try {
-            const uploaded = await upload.mutateAsync({ conversationId, file: pendingFile });
-            send.mutate(
-              {
-                conversation_id: conversationId,
-                type: uploaded.kind,
-                body: caption || undefined,
-                media_storage_path: uploaded.storage_path,
-                media_mime: uploaded.media_mime,
-                media_size_bytes: uploaded.media_size_bytes,
-              },
-              { onSuccess: () => setPendingFile(null) },
-            );
-          } catch {
-            // toast já disparado pelo onError de useUploadMedia; dialog fica aberto p/ retry
-            return;
-          }
-        }}
+        files={pendingFiles}
+        sending={enviandoLote || upload.isPending || send.isPending}
+        onCancel={() => setPendingFiles([])}
+        onRemove={(i) => setPendingFiles((atual) => atual.filter((_, idx) => idx !== i))}
+        onSend={(caption) => void enviarLote(caption)}
       />
       <ContactPickerDialog
         open={contactPickerOpen}

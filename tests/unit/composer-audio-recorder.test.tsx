@@ -12,7 +12,7 @@ vi.mock("@/hooks/inbox/useUploadMedia", () => ({
   useUploadMedia: () => ({ mutateAsync: uploadMock, isPending: false }),
 }));
 vi.mock("@/hooks/inbox/useSendMessage", () => ({
-  useSendMessage: () => ({ mutate: sendMock, isPending: false }),
+  useSendMessage: () => ({ mutate: sendMock, mutateAsync: sendMock, isPending: false }),
 }));
 
 import { AudioRecorder } from "@/components/inbox/composer/AudioRecorder";
