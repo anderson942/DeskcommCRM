@@ -35,6 +35,16 @@ export interface TinyProduto {
   descricao: string;
   tipo: string;
   situacao: "A" | "I" | "E";
+  /**
+   * "P" = produto PAI (agrupador de variações — sem estoque/venda próprios),
+   * "V" = variação (o SKU vendável de verdade, com estoque próprio),
+   * "N" = produto simples, sem variação nenhuma.
+   * Medido contra a API real: um mesmo nome de produto pode ter um "P" e
+   * vários "V" (um por tamanho/cor) — o "P" nunca deve entrar no catálogo
+   * que a IA usa pra responder preço/estoque, senão o cliente pode ser
+   * "atendido" com um SKU que não representa nenhuma unidade vendável.
+   */
+  tipoVariacao: "P" | "V" | "N";
   dataCriacao: string;
   dataAlteracao: string;
   unidade: string;

@@ -55,6 +55,7 @@ interface LinhaDeIntegracao {
   oauth_refresh_token_encrypted: string | null;
   expires_at: string | null;
   last_sync_at: string | null;
+  store_metadata: { backfill_offset?: number } | null;
 }
 
 /** "2023-01-01 10:00:00" — o formato que a Tiny espera em `dataAlteracao`. */
@@ -147,7 +148,13 @@ async function sincronizarOrganizacao(
 
   let processados = 0;
   let erros = 0;
-  let offset = 0;
+  // ⚠️ RETOMA de onde a rodada anterior parou — sem isso, toda rodada
+  // recomeçava do offset 0 (porque `dataAlteracao` só muda quando o pass
+  // INTEIRO termina), então um catálogo grande (medido: 51 mil produtos)
+  // nunca saía da primeira página. Persistido em `store_metadata`, não em
+  // coluna própria, porque é bookkeeping específico do provider Tiny — a
+  // tabela é genérica entre providers.
+  let offset = row.store_metadata?.backfill_offset ?? 0;
   // Só avança `last_sync_at` quando esgota TODAS as páginas do filtro atual.
   // Se parar por ter batido o teto de produtos por rodada, avançar o
   // carimbo faria a próxima rodada (que filtra por `dataAlteracao` a partir
@@ -171,6 +178,11 @@ async function sincronizarOrganizacao(
     }
 
     for (const produto of pagina.itens) {
+      // Produto PAI (agrupador de variações) não é item vendável — não tem
+      // estoque próprio e não deve entrar no catálogo que a IA usa pra
+      // responder preço/disponibilidade. Só pula a linha (não conta como
+      // processado nem como erro — não é falha, é fora de escopo).
+      if (produto.tipoVariacao === "P") continue;
       try {
         let quantidade = 0;
         if (SITUACOES_ATIVAS.has(produto.situacao)) {
@@ -219,6 +231,10 @@ async function sincronizarOrganizacao(
       // — ela repete o trabalho em vez de avançar o carimbo sobre produtos que
       // ficaram de fora. `last_sync_at` só avança quando a rodada viu tudo.
       last_sync_at: esgotouTudo ? new Date().toISOString() : row.last_sync_at,
+      // Zera o offset quando o pass termina (a próxima rodada é incremental,
+      // via `dataAlteracao`, começa do zero de novo); senão guarda onde parar
+      // — é o que faz a rodada seguinte CONTINUAR em vez de recomeçar.
+      store_metadata: { backfill_offset: esgotouTudo ? 0 : offset },
       status: "healthy",
       status_reason: null,
     })
@@ -241,7 +257,7 @@ async function handle(req: NextRequest): Promise<Response> {
 
   const { data, error } = await admin
     .from("tenant_integrations")
-    .select("id, organization_id, oauth_access_token_encrypted, oauth_refresh_token_encrypted, expires_at, last_sync_at")
+    .select("id, organization_id, oauth_access_token_encrypted, oauth_refresh_token_encrypted, expires_at, last_sync_at, store_metadata")
     .eq("provider", "tiny")
     .eq("status", "healthy");
 
