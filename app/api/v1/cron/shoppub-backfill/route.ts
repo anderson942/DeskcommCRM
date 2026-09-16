@@ -60,6 +60,21 @@ async function sincronizarOrganizacao(
 
   const client = new ShoppubApiClient({ subdominio, token: tokenPlano as string });
 
+  // Uma vez por RODADA, não por página: lista pequena, muda raro — buscar de
+  // novo a cada uma das até 40 páginas seria 40 chamadas de API pra um dado
+  // que não muda entre elas.
+  let mapaCategorias: Map<number, string>;
+  try {
+    const categorias = await client.obterCategorias();
+    mapaCategorias = new Map(categorias.map((c) => [c.id, c.nome]));
+  } catch (err) {
+    logger.warn("[shoppub-backfill] obterCategorias falhou — segue sem nome de categoria nesta rodada", {
+      organizationId: row.organization_id,
+      detail: err instanceof Error ? err.message : "erro",
+    });
+    mapaCategorias = new Map();
+  }
+
   let processados = 0;
   let erros = 0;
   // ⚠️ RETOMA de onde a rodada anterior parou (mesmo raciocínio da 0264/Tiny).
@@ -82,7 +97,7 @@ async function sincronizarOrganizacao(
 
     const vendaveis = resposta.results.filter(ehVendavel);
     if (vendaveis.length > 0) {
-      const linhas = vendaveis.map((p) => mapearProduto(p, row.organization_id, subdominio));
+      const linhas = vendaveis.map((p) => mapearProduto(p, row.organization_id, subdominio, mapaCategorias));
       const { error } = await admin
         .from("catalog_products")
         .upsert(linhas, { onConflict: "organization_id,codigo" });

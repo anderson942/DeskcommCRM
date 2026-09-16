@@ -19,19 +19,44 @@ function precoOriginalCents(p: ShoppubProduto): number | null {
 }
 
 /**
+ * `categorias` do produto é uma lista de IDS, sem nome — a Shoppub não
+ * embute o nome ali (diferente de `fabricante_info`, que já vem pronto).
+ * Junta os nomes resolvidos com ", "; ID sem correspondência no mapa (grupo
+ * apagado, ou o mapa não cobriu por algum erro de paginação) é OMITIDO em
+ * vez de aparecer como número cru — melhor faltar uma categoria que mostrar
+ * "482" pro operador.
+ */
+function resolverCategorias(p: ShoppubProduto, mapaCategorias: Map<number, string>): string | null {
+  const nomes = (p.categorias ?? []).map((id) => mapaCategorias.get(id)).filter((n): n is string => !!n);
+  return nomes.length > 0 ? nomes.join(", ") : null;
+}
+
+/**
  * O host vem de fora (não do produto): é o domínio DA LOJA, o mesmo que
  * `tenant_integrations.store_metadata.subdominio` guarda pra montar a URL
  * da API. Padrão confirmado contra a loja real (2026-09-16), não
  * adivinhado: `GET https://www.outlet360.com.br/produto/{slug}/` → 200 num
  * produto ativo de verdade.
+ *
+ * `mapaCategorias` (id → nome) vem de `ShoppubApiClient.obterCategorias()`,
+ * buscado UMA VEZ por rodada de sync (webhook ou backfill) e reaproveitado
+ * pra todo produto daquela rodada — a lista de categorias é pequena e
+ * muda raro, não vale uma chamada de API por produto.
  */
-export function mapearProduto(p: ShoppubProduto, orgId: string, host: string) {
+export function mapearProduto(
+  p: ShoppubProduto,
+  orgId: string,
+  host: string,
+  mapaCategorias: Map<number, string>,
+) {
   return {
     organization_id: orgId,
     codigo: p.sku,
     nome: p.nome,
-    marca: null,
-    categoria: null,
+    // Já vem EMBUTIDO na listagem (`fabricante_info`) — sem chamada extra,
+    // diferente de categoria.
+    marca: p.fabricante_info?.nome ?? null,
+    categoria: resolverCategorias(p, mapaCategorias),
     preco_cents: Math.round(p.preco_por * 100),
     preco_original_cents: precoOriginalCents(p),
     custo_cents: p.preco_custo ? Math.round(p.preco_custo * 100) : null,

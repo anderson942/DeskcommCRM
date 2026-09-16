@@ -40,6 +40,11 @@ export interface ShoppubProduto {
   estoque: number;
   estoque_reserva: number;
   extra_fields?: { produto_vendavel?: boolean } | null;
+  /** IDs — resolvidos pra nome via `obterCategorias()` + `mapaCategorias`. */
+  categorias?: number[];
+  fabricante?: number | null;
+  /** Já vem EMBUTIDO na própria listagem — não precisa de chamada extra por produto. */
+  fabricante_info?: { id: number; nome: string } | null;
 }
 
 export interface ShoppubProdutosPage {
@@ -47,6 +52,22 @@ export interface ShoppubProdutosPage {
   next: string | null;
   previous: string | null;
   results: ShoppubProduto[];
+}
+
+export interface ShoppubCategoria {
+  id: number;
+  nome: string;
+  slug: string;
+  is_departamento: boolean;
+  parent: number | null;
+  ativo: boolean;
+}
+
+interface ShoppubCategoriasPage {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: ShoppubCategoria[];
 }
 
 interface ClientOpts {
@@ -154,5 +175,20 @@ export class ShoppubApiClient {
 
   obterProduto(sku: string): Promise<ShoppubProduto> {
     return this.request<ShoppubProduto>(`/produto/${encodeURIComponent(sku)}/`);
+  }
+
+  /**
+   * TODAS as categorias, paginação seguida até o fim — lista pequena (~dezenas
+   * a poucas centenas), sem custo de manter offset entre rodadas como o
+   * catálogo de produtos precisa.
+   */
+  async obterCategorias(): Promise<ShoppubCategoria[]> {
+    const todas: ShoppubCategoria[] = [];
+    for (let page = 1; ; page++) {
+      const resposta = await this.request<ShoppubCategoriasPage>("/produto-categorias/", { page });
+      todas.push(...resposta.results);
+      if (!resposta.next) break;
+    }
+    return todas;
   }
 }

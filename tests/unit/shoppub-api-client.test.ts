@@ -66,3 +66,41 @@ describe("ShoppubApiClient — redirect não derruba o Authorization", () => {
     await expect(client.listarProdutos({ page: 1 })).rejects.toMatchObject({ code: "unauthorized" });
   });
 });
+
+describe("ShoppubApiClient.obterCategorias", () => {
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it("segue a paginação até o fim e devolve tudo achatado num array só", async () => {
+    const paginas: Record<string, unknown> = {
+      "1": { count: 3, next: "https://loja.shoppub.com.br/api/v1/produto-categorias/?page=2", previous: null, results: [{ id: 1, nome: "Roupas" }] },
+      "2": { count: 3, next: "https://loja.shoppub.com.br/api/v1/produto-categorias/?page=3", previous: "...", results: [{ id: 2, nome: "Calçados" }] },
+      "3": { count: 3, next: null, previous: "...", results: [{ id: 3, nome: "Acessórios" }] },
+    };
+    global.fetch = vi.fn(async (url: string) => {
+      const page = new URL(url).searchParams.get("page") ?? "1";
+      return new Response(JSON.stringify(paginas[page]), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const client = new ShoppubApiClient({ subdominio: "loja.shoppub.com.br", token: "abc" });
+    const categorias = await client.obterCategorias();
+
+    expect(categorias.map((c) => c.nome)).toEqual(["Roupas", "Calçados", "Acessórios"]);
+  });
+
+  it("lista de uma página só não faz chamada extra nenhuma", async () => {
+    const fetchSpy = vi.fn(async () =>
+      new Response(JSON.stringify({ count: 1, next: null, previous: null, results: [{ id: 1, nome: "Roupas" }] }), {
+        status: 200,
+      }),
+    );
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const client = new ShoppubApiClient({ subdominio: "loja.shoppub.com.br", token: "abc" });
+    await client.obterCategorias();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});

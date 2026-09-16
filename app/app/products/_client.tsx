@@ -11,6 +11,7 @@ import { apiClient } from "@/lib/api/client";
 import type { ApiSuccess } from "@/lib/api/wrappers";
 import { formatCents } from "@/lib/money";
 import { precoParaCentavos, type Produto } from "@/lib/schemas/produtos";
+import { ProdutoDetalheDialog } from "./_components/ProdutoDetalheDialog";
 
 type FiltroEstoque = "todos" | "disponivel" | "esgotado";
 type Tamanho = 10 | 25 | 50 | 100 | "tudo";
@@ -102,6 +103,7 @@ export function ProdutosClient({
   const [salvando, setSalvando] = React.useState(false);
   const [importando, setImportando] = React.useState(false);
   const [resumo, setResumo] = React.useState<ResumoDaImportacao | null>(null);
+  const [detalhe, setDetalhe] = React.useState<Produto | null>(null);
   const arquivoRef = React.useRef<HTMLInputElement>(null);
   // Incrementar isto força o efeito de busca a rodar de novo com os MESMOS
   // filtros — é o que substitui o antigo `router.refresh()` (que só refazia
@@ -455,8 +457,13 @@ export function ProdutosClient({
         >
           {produtos.map((p) => (
             <li key={p.id} className="flex items-center gap-4 p-3" data-testid={`produto-${p.codigo}`}>
-              <div className="min-w-0 flex-1">
-                <p className={`truncate font-medium ${p.ativo ? "" : "text-muted-foreground line-through"}`}>
+              <button
+                type="button"
+                onClick={() => setDetalhe(p)}
+                className="min-w-0 flex-1 text-left"
+                data-testid={`abrir-detalhe-${p.codigo}`}
+              >
+                <p className={`truncate font-medium hover:underline ${p.ativo ? "" : "text-muted-foreground line-through"}`}>
                   {p.nome}
                 </p>
                 <p className="text-xs text-muted-foreground">
@@ -466,7 +473,7 @@ export function ProdutosClient({
                     ? ` · ${p.quantidade} ${t("em estoque")}`
                     : ` · ${t("sem controle de estoque")}`}
                 </p>
-              </div>
+              </button>
               <span className="shrink-0 text-right tabular-nums">
                 {p.preco_original_cents !== null ? (
                   <span className="mr-1.5 text-muted-foreground line-through" data-testid={`preco-de-${p.codigo}`}>
@@ -517,6 +524,8 @@ export function ProdutosClient({
           </Button>
         </div>
       ) : null}
+
+      <ProdutoDetalheDialog produto={detalhe} onClose={() => setDetalhe(null)} />
     </div>
   );
 }

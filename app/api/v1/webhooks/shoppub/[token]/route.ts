@@ -98,7 +98,14 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
       return ok({ accepted: true, ignored: true, reason: "produto_pai" });
     }
 
-    const linha = mapearProduto(produto, integration.organization_id, subdominio);
+    // Lista pequena, busca de novo a cada webhook: mais simples que cache, e
+    // o custo é uma chamada extra por evento de preço/estoque — a Shoppub
+    // não embute nome de categoria no produto (embute fabricante_info, esse
+    // sim reaproveitado direto sem chamada nenhuma).
+    const categorias = await client.obterCategorias();
+    const mapaCategorias = new Map(categorias.map((c) => [c.id, c.nome]));
+
+    const linha = mapearProduto(produto, integration.organization_id, subdominio, mapaCategorias);
     const { error: upsertErr } = await admin
       .from("catalog_products")
       .upsert(linha, { onConflict: "organization_id,codigo" });
