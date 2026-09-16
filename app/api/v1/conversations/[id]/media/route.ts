@@ -10,6 +10,7 @@ import { type NextRequest } from "next/server";
 import { fail, ok } from "@/lib/api/wrappers";
 import { resolveAuthDual } from "@/lib/api/auth-dual";
 import { IDIOMA_PADRAO } from "@/lib/i18n/idiomas";
+import { transcodificarImagemExterna } from "@/lib/messaging/media/image-transcode";
 import { extFromMime, MAX_MEDIA_BYTES } from "@/lib/messaging/media/types";
 import { validateOutboundMedia } from "@/lib/messaging/media/upload-validation";
 import { transcodificarNotaDeVoz } from "@/lib/messaging/media/voice-transcode";
@@ -93,8 +94,13 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
   // repetir o trabalho. Falha devolve o original: o canal que converte sozinho
   // continua funcionando como sempre.
   const audio = await transcodificarNotaDeVoz({ buffer: bruto, mime });
-  const mimeFinal = audio.mime;
-  const buffer = audio.buffer;
+  // Encadeado, não `else if`: são mutuamente exclusivos por mime (um áudio
+  // convertido vira audio/ogg, que `precisaTranscodificarImagem` ignora; uma
+  // imagem AVIF nunca bate em `precisaTranscodificar` do áudio) — cada função
+  // só age no que reconhece e devolve o resto intacto.
+  const imagem = await transcodificarImagemExterna({ buffer: audio.buffer, mime: audio.mime });
+  const mimeFinal = imagem.mime;
+  const buffer = imagem.buffer;
 
   const storagePath = `${activeOrg.orgId}/${conversationId}/out-${randomUUID()}.${extFromMime(mimeFinal)}`;
   const admin = createAdminClient();
