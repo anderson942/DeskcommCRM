@@ -6,8 +6,10 @@ import {
   useRef,
   useState,
   type ClipboardEvent,
+  type DragEvent,
   type KeyboardEvent,
 } from "react";
+import { toast } from "sonner";
 import { PaperPlaneTilt } from "@/lib/ui/icons";
 import { Button } from "@/components/ui/button";
 import { AttachMenu } from "@/components/inbox/composer/AttachMenu";
@@ -23,6 +25,7 @@ import { X } from "lucide-react";
 import { useSendMessage } from "@/hooks/inbox/useSendMessage";
 import { useUploadMedia } from "@/hooks/inbox/useUploadMedia";
 import { imagemDoClipboard } from "@/lib/inbox/clipboard-image";
+import { nomeDaImagemArrastada, urlDaImagemArrastada } from "@/lib/inbox/drop-image";
 import { interpolateTemplate } from "@/lib/inbox/template-vars";
 import { cn } from "@/lib/utils";
 
@@ -79,6 +82,8 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   const [contactPickerOpen, setContactPickerOpen] = useState(false);
   const [menuDismissed, setMenuDismissed] = useState(false);
   const [mode, setMode] = useState<"reply" | "note">("reply");
+  const [draggingOver, setDraggingOver] = useState(false);
+  const [buscandoImagemArrastada, setBuscandoImagemArrastada] = useState(false);
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const send = useSendMessage();
   const upload = useUploadMedia();
@@ -176,6 +181,62 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
     setPendingFile(imagem);
   }
 
+  /**
+   * Arrastar uma foto de OUTRA ABA (o site da loja, um resultado de busca)
+   * pra dentro da conversa — mesmo caminho do Ctrl+V: cai no preview com
+   * legenda, sem atalho paralelo pra validação/erro/retry.
+   *
+   * `preventDefault` no `dragOver` é o que impede o defeito relatado: sem
+   * ele, o `drop` nem chega a disparar aqui, e o browser trata a imagem
+   * arrastada como navegação — é isso que abria a foto numa aba nova.
+   * Por isso ele roda SEMPRE, mesmo quando o drop não vai virar anexo (nota
+   * interna, campo travado) — o que muda nesses casos é só não mostrar o
+   * realce visual nem tentar anexar.
+   */
+  function onDragOver(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    if (mode === "reply" && !respostaBarrada && !pendingFile) setDraggingOver(true);
+  }
+
+  function onDragLeave() {
+    setDraggingOver(false);
+  }
+
+  async function onDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDraggingOver(false);
+    if (mode !== "reply" || respostaBarrada || pendingFile) return;
+
+    const arquivo = imagemDoClipboard(e.dataTransfer, new Date());
+    if (arquivo) {
+      setPendingFile(arquivo);
+      return;
+    }
+
+    // Chrome materializa um File pra maioria das <img> arrastadas entre abas,
+    // mas nem sempre — aqui só sobrou a URL (text/uri-list). Busca pelo
+    // servidor porque o browser esbarraria em CORS na maioria dos CDNs.
+    const url = urlDaImagemArrastada(e.dataTransfer);
+    if (!url) return; // não era imagem nem link — solta sem travar nada
+
+    setBuscandoImagemArrastada(true);
+    try {
+      const res = await fetch(`/api/v1/media/fetch-external?url=${encodeURIComponent(url)}`);
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+        toast.error(json?.error?.message || t("Não foi possível carregar essa imagem."));
+        return;
+      }
+      const blob = await res.blob();
+      const nome = nomeDaImagemArrastada(url, blob.type, new Date());
+      setPendingFile(new File([blob], nome, { type: blob.type }));
+    } catch {
+      toast.error(t("Não foi possível carregar essa imagem."));
+    } finally {
+      setBuscandoImagemArrastada(false);
+    }
+  }
+
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Escape" && menuOpen) {
       setMenuDismissed(true);
@@ -199,11 +260,25 @@ export const Composer = forwardRef<ComposerHandle, Props>(function Composer(
   return (
     <>
       <div
+        data-testid="composer-drop-zone"
         className={cn(
           "relative border-t border-border bg-background px-3 py-2",
           mode === "note" && "border-warning/40 bg-warning-bg",
         )}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
       >
+        {draggingOver && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center gap-2 border-2 border-dashed border-primary bg-background/90 text-sm font-medium text-primary">
+            {t("Solte para anexar a imagem")}
+          </div>
+        )}
+        {buscandoImagemArrastada && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-background/90 text-sm text-muted-foreground">
+            {t("Carregando imagem…")}
+          </div>
+        )}
         {mode === "reply" && (
           <ReplyReviewPanel conversationId={conversationId} disabled={isDisabled} />
         )}

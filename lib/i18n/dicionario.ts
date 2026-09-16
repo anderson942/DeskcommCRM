@@ -464,6 +464,8 @@ export const DICIONARIO: Traducoes = {
   Enviar: { es: "Enviar" },
   "Enviar modelo": { es: "Enviar plantilla" },
   "Escolha um modelo aprovado…": { es: "Elige una plantilla aprobada…" },
+  "Solte para anexar a imagem": { es: "Suelta para adjuntar la imagen" },
+  "Carregando imagem…": { es: "Cargando imagen…" },
 
   // ─── Painel do contato ───
   CONTATO: { es: "CONTACTO" },
