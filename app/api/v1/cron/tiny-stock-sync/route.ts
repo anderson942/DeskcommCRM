@@ -119,6 +119,17 @@ async function obterAccessTokenValido(
   return renovado.accessToken;
 }
 
+/**
+ * A Tiny usa `precoPromocional: 0` pra dizer "sem promoção" — NÃO `null`.
+ * `?? ` só cai no fallback com null/undefined, então `0 ?? preco` ficava com
+ * ZERO (medido: um produto real virou R$ 0,00 no catálogo). Preço é campo
+ * onde adivinhar sai caro — aqui o "adivinhado" (0 = sem promo) veio medido
+ * contra a API real, não chutado.
+ */
+function precoEfetivo(p: TinyProduto["precos"]): number {
+  return p.precoPromocional !== null && p.precoPromocional > 0 ? p.precoPromocional : p.preco;
+}
+
 /** Um produto da Tiny → a linha que `catalog_products` espera. */
 function mapearProduto(p: TinyProduto, quantidade: number, orgId: string) {
   return {
@@ -127,7 +138,7 @@ function mapearProduto(p: TinyProduto, quantidade: number, orgId: string) {
     nome: p.descricao,
     marca: null,
     categoria: null,
-    preco_cents: Math.round((p.precos.precoPromocional ?? p.precos.preco) * 100),
+    preco_cents: Math.round(precoEfetivo(p.precos) * 100),
     custo_cents: p.precos.precoCusto !== null ? Math.round(p.precos.precoCusto * 100) : null,
     controla_estoque: true,
     quantidade,
