@@ -24,8 +24,10 @@ const VARIACOES_DO_LINHO = [
 
 describe("chaveDoGrupo", () => {
   it("tira o sufixo de tamanho NUMÉRICO do código", () => {
-    expect(chaveDoGrupo("VOLD000000425-38")).toBe("VOLD000000425");
-    expect(chaveDoGrupo("VOLD000000425-50")).toBe("VOLD000000425");
+    // "VOLD425", não "VOLD000000425": a chave também normaliza zero à
+    // esquerda (ver descrição mais abaixo) — o valor aqui já reflete isso.
+    expect(chaveDoGrupo("VOLD000000425-38")).toBe("VOLD425");
+    expect(chaveDoGrupo("VOLD000000425-50")).toBe("VOLD425");
   });
 
   /**
@@ -35,14 +37,41 @@ describe("chaveDoGrupo", () => {
    * de linho em tamanhos diferentes, não produtos distintos.
    */
   it("tira o sufixo de tamanho em LETRA do código (grade P/M/G/GG/XXL)", () => {
-    expect(chaveDoGrupo("VOLD000000411-G")).toBe("VOLD000000411");
-    expect(chaveDoGrupo("VOLD000000411-GG")).toBe("VOLD000000411");
-    expect(chaveDoGrupo("VOLD000000411-XXL")).toBe("VOLD000000411");
+    expect(chaveDoGrupo("VOLD000000411-G")).toBe("VOLD411");
+    expect(chaveDoGrupo("VOLD000000411-GG")).toBe("VOLD411");
+    expect(chaveDoGrupo("VOLD000000411-XXL")).toBe("VOLD411");
   });
 
   it("código sem sufixo de tamanho vira a própria chave", () => {
     expect(chaveDoGrupo("BONE-RL-CLASSIC")).toBe("BONE-RL-CLASSIC");
     expect(chaveDoGrupo("IP15")).toBe("IP15");
+  });
+
+  /**
+   * Achado do Anderson (2026-09-17): a tela mostrava "duplicado" — na
+   * verdade era o MESMO produto sob duas grafias de código diferentes.
+   * "acos00000077-38" e "ACOS00000077-38" são a mesma variação; só a caixa
+   * do código muda entre uma sincronização e outra.
+   */
+  it("normaliza a CAIXA do código — minúscula e maiúscula são o mesmo grupo", () => {
+    expect(chaveDoGrupo("acos00000077-38")).toBe(chaveDoGrupo("ACOS00000077-38"));
+  });
+
+  /**
+   * Achado do Anderson (2026-09-17), mesma tela: "ACOS00000077-48" (8
+   * zeros) e "ACOS0000077-48" (7 zeros) são o MESMO produto — o ID
+   * sequencial da sincronização, não o nome do produto, então zero à
+   * esquerda não distingue nada. Verificado contra produção: pelo menos 20
+   * famílias de produto (RALP, ACOS, LAC, VOLD, TOMH) tinham esse mesmo
+   * problema de zero-padding inconsistente entre sincronizações.
+   */
+  it("normaliza zero à esquerda no meio do código — quantidade de zeros não distingue produto", () => {
+    expect(chaveDoGrupo("ACOS00000077-48")).toBe(chaveDoGrupo("ACOS0000077-48"));
+    expect(chaveDoGrupo("RALP0000001018-P")).toBe(chaveDoGrupo("RALP000001018-P"));
+  });
+
+  it("não confunde dois códigos de números genuinamente diferentes", () => {
+    expect(chaveDoGrupo("ACOS00000077-38")).not.toBe(chaveDoGrupo("ACOS00000078-38"));
   });
 });
 
@@ -125,7 +154,7 @@ describe("agruparProdutos", () => {
     const grupos = agruparProdutos(VARIACOES_DA_CALCA);
 
     expect(grupos).toHaveLength(1);
-    expect(grupos[0]!.chave).toBe("VOLD000000425");
+    expect(grupos[0]!.chave).toBe("VOLD425");
     expect(grupos[0]!.titulo).toBe("Calça VersatiOld Alfaiataria Premium Slim Cinza");
     expect(grupos[0]!.variacoes).toHaveLength(7);
   });
@@ -138,9 +167,30 @@ describe("agruparProdutos", () => {
     const grupos = agruparProdutos(VARIACOES_DO_LINHO);
 
     expect(grupos).toHaveLength(1);
-    expect(grupos[0]!.chave).toBe("VOLD000000411");
+    expect(grupos[0]!.chave).toBe("VOLD411");
     expect(grupos[0]!.titulo).toBe("Calça Linho VersatiOld Areia");
     expect(grupos[0]!.variacoes).toHaveLength(5);
+  });
+
+  /**
+   * O CASO REAL relatado pelo Anderson (2026-09-17, print da tela): duas
+   * grafias de código diferentes pro MESMO produto faziam a sanfona
+   * "quebrar" em pedaços soltos — "acos00000077-38" (minúscula) e
+   * "ACOS00000077-38" (maiúscula) eram tratados como produtos diferentes, e
+   * "ACOS00000077-48" (8 zeros) vs "ACOS0000077-48" (7 zeros) idem. Isso é
+   * exatamente o que virava a linha "duplicada" no print.
+   */
+  it("caixa E zero-padding diferentes, tudo junto, ainda vira 1 grupo só", () => {
+    const grupos = agruparProdutos([
+      { id: "1", codigo: "acos00000077-38", nome: "Bermuda Acostamento Cargo Casual Preta 38 - 38", ativo: true },
+      { id: "2", codigo: "ACOS00000077-38", nome: "Bermuda Acostamento Cargo Casual Preta 38 - 38", ativo: true },
+      { id: "3", codigo: "ACOS00000077-40", nome: "Bermuda Acostamento Cargo Casual Preta 38 40 - 40", ativo: true },
+      { id: "4", codigo: "ACOS0000077-48", nome: "Bermuda Acostamento Cargo Casual Preta 38 40 42 44 46 48 - 48", ativo: true },
+    ]);
+
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0]!.variacoes).toHaveLength(4);
+    expect(grupos[0]!.titulo).toBe("Bermuda Acostamento Cargo Casual Preta");
   });
 
   it("produto sem irmão de tamanho vira grupo de 1, sozinho", () => {

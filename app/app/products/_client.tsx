@@ -522,9 +522,14 @@ export function ProdutosClient({
         >
           {grupos.map((g) =>
             g.variacoes.length === 1 ? (
+              // `rotulo=g.titulo`, não `p.nome` cru: um produto que ficou
+              // sozinho (sem irmão de tamanho reconhecido) ainda pode ter a
+              // cauda de tamanho no nome ("Tamanho:44") — mostrar limpo
+              // igual ao título de uma sanfona de verdade, não a bagunça.
               <ProdutoLinha
                 key={g.chave}
                 p={g.variacoes[0]!}
+                rotulo={g.titulo}
                 podeEditar={podeEditar}
                 t={t}
                 onAbrirDetalhe={setDetalhe}

@@ -62,8 +62,22 @@ const TAMANHO_NO_FIM_DO_NOME = new RegExp(
   `(?:-\\s*(${TOKEN_DE_TAMANHO})|Tamanho:\\s*(${TOKEN_DE_TAMANHO}))\\s*$`,
 );
 
+/**
+ * Achado do Anderson (2026-09-17): "ACOS00000077-38" e "acos00000077-38"
+ * (mesma variação, só a caixa do código difere) e "ACOS00000077-48" vs
+ * "ACOS0000077-48" (mesmo produto, um zero a menos no meio) apareciam como
+ * "duplicados" — na verdade eram o MESMO grupo que a chave não reconhecia
+ * como igual. Normaliza os dois: maiúscula sempre, e zero à esquerda de
+ * qualquer corrida de dígitos não conta (ID sequencial de sync, não parte
+ * do nome do produto — "00000077" e "0000077" são o número 77 dos dois
+ * jeitos). Verificado contra produção: pelo menos 20 famílias de produto
+ * tinham esse mesmo problema de zero-padding, não só este uma vez.
+ */
 export function chaveDoGrupo(codigo: string): string {
-  return codigo.replace(SUFIXO_DE_TAMANHO_NO_CODIGO, "");
+  return codigo
+    .toUpperCase()
+    .replace(SUFIXO_DE_TAMANHO_NO_CODIGO, "")
+    .replace(/0+(\d)/g, "$1");
 }
 
 export function tituloLimpo(nome: string): string {

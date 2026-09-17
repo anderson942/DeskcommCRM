@@ -54,7 +54,14 @@ as $$
       -- XXL — até 4 maiúsculas). Mesma regra de `lib/catalogo/agrupamento.ts`
       -- — confirmado contra o catálogo real: calça usa número, linho da
       -- mesma VersatiOld usa letra, e é o MESMO padrão de acúmulo nos dois.
-      regexp_replace(a.codigo, '-([0-9]+|[A-Z]{1,4})$', '') as chave_grupo,
+      -- MAIÚSCULA sempre + zero à esquerda de corrida de dígito não conta
+      -- ("ACOS00000077" = "ACOS0000077" = "ACOS77", achado do Anderson
+      -- 2026-09-17: mesmo produto aparecia "duplicado" por causa disso —
+      -- pelo menos 20 famílias de produto tinham o mesmo problema).
+      regexp_replace(
+        regexp_replace(upper(a.codigo), '-([0-9]+|[A-Z]{1,4})$', ''),
+        '0+([0-9])', '\1', 'g'
+      ) as chave_grupo,
       -- Duas convenções reais de cauda no NOME (confirmado contra produção,
       -- 2026-09-17): (1) lista acumulada + traço — "* " aceita ZERO tokens
       -- antes do traço de propósito, muita variação (Acostamento, Tommy

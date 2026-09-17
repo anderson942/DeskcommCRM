@@ -80,20 +80,20 @@ describe("sanfona de variações na lista de produtos", () => {
   it("fechada por padrão: mostra só o título limpo, sem os SKUs individuais", () => {
     montar(variacoesDaCalca());
 
-    expect(screen.getByTestId("abrir-grupo-VOLD000000425")).toHaveTextContent(
+    expect(screen.getByTestId("abrir-grupo-VOLD425")).toHaveTextContent(
       "Calça VersatiOld Alfaiataria Premium Slim Cinza",
     );
     // O título fechado não pode conter a cauda de tamanho de nenhum SKU.
-    expect(screen.getByTestId("abrir-grupo-VOLD000000425")).not.toHaveTextContent("38 - 38");
-    expect(screen.queryByTestId("variacoes-VOLD000000425")).not.toBeInTheDocument();
+    expect(screen.getByTestId("abrir-grupo-VOLD425")).not.toHaveTextContent("38 - 38");
+    expect(screen.queryByTestId("variacoes-VOLD425")).not.toBeInTheDocument();
   });
 
   it("clicar expande: cada variação aparece como 'título - tamanho', com seu próprio preço, SKU e estoque", () => {
     montar(variacoesDaCalca());
 
-    fireEvent.click(screen.getByTestId("abrir-grupo-VOLD000000425"));
+    fireEvent.click(screen.getByTestId("abrir-grupo-VOLD425"));
 
-    const variacoes = screen.getByTestId("variacoes-VOLD000000425");
+    const variacoes = screen.getByTestId("variacoes-VOLD425");
     expect(variacoes).toHaveTextContent("Calça VersatiOld Alfaiataria Premium Slim Cinza - 38");
     expect(variacoes).toHaveTextContent("Calça VersatiOld Alfaiataria Premium Slim Cinza - 40");
     expect(variacoes).toHaveTextContent("Calça VersatiOld Alfaiataria Premium Slim Cinza - 42");
@@ -109,7 +109,7 @@ describe("sanfona de variações na lista de produtos", () => {
   it("indicador '+' fechado vira '−' aberto", () => {
     montar(variacoesDaCalca());
 
-    const abrir = screen.getByTestId("abrir-grupo-VOLD000000425");
+    const abrir = screen.getByTestId("abrir-grupo-VOLD425");
     expect(abrir).toHaveTextContent("+");
     expect(abrir).not.toHaveTextContent("−");
 
@@ -121,7 +121,7 @@ describe("sanfona de variações na lista de produtos", () => {
 
   it("linha de variação tem classe de fundo diferente da linha solta, pra indicar subcategoria", () => {
     montar(variacoesDaCalca());
-    fireEvent.click(screen.getByTestId("abrir-grupo-VOLD000000425"));
+    fireEvent.click(screen.getByTestId("abrir-grupo-VOLD425"));
 
     expect(screen.getByTestId("produto-VOLD000000425-38").className).toContain("bg-muted");
   });
@@ -129,18 +129,18 @@ describe("sanfona de variações na lista de produtos", () => {
   it("clicar de novo recolhe a sanfona", () => {
     montar(variacoesDaCalca());
 
-    const abrir = screen.getByTestId("abrir-grupo-VOLD000000425");
+    const abrir = screen.getByTestId("abrir-grupo-VOLD425");
     fireEvent.click(abrir);
-    expect(screen.getByTestId("variacoes-VOLD000000425")).toBeInTheDocument();
+    expect(screen.getByTestId("variacoes-VOLD425")).toBeInTheDocument();
 
     fireEvent.click(abrir);
-    expect(screen.queryByTestId("variacoes-VOLD000000425")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("variacoes-VOLD425")).not.toBeInTheDocument();
   });
 
   it("clicar numa variação aberta abre o MESMO popup de detalhe que uma linha solta abre", async () => {
     montar(variacoesDaCalca());
 
-    fireEvent.click(screen.getByTestId("abrir-grupo-VOLD000000425"));
+    fireEvent.click(screen.getByTestId("abrir-grupo-VOLD425"));
     fireEvent.click(screen.getByTestId("abrir-detalhe-VOLD000000425-40"));
 
     const dialog = await screen.findByRole("dialog");
@@ -157,7 +157,7 @@ describe("sanfona de variações na lista de produtos", () => {
   it("com permissão de editar, desativar/reativar continua por VARIAÇÃO dentro da sanfona aberta", () => {
     montar(variacoesDaCalca(), true);
 
-    fireEvent.click(screen.getByTestId("abrir-grupo-VOLD000000425"));
+    fireEvent.click(screen.getByTestId("abrir-grupo-VOLD425"));
 
     expect(screen.getByTestId("alternar-VOLD000000425-38")).toHaveTextContent("Desativar");
     expect(screen.getByTestId("alternar-VOLD000000425-40")).toHaveTextContent("Desativar");
