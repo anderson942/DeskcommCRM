@@ -22,7 +22,7 @@ export interface AgentRow {
   priority?: number | null;
   published_version_id?: string | null;
   paused_at?: string | null;
-  operation_mode?: "automatic" | "assisted";
+  operation_mode?: "automatic" | "assisted" | "operator_only";
   operation_revision?: number;
   /**
    * Provedor e modelo da versão PUBLICADA — o que de fato responde. Vem por join

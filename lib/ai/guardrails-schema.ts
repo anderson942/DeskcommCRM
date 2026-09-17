@@ -106,7 +106,7 @@ export const AGENT_CONFIG_DEFAULTS: AgentConfig = {
 
 export const agentPatchSchema = z
   .object({
-    operation_mode: z.enum(["automatic", "assisted"]).optional(),
+    operation_mode: z.enum(["automatic", "assisted", "operator_only"]).optional(),
     paused_at: z.iso.datetime().nullable().optional(),
     name: z.string().min(2).max(120).optional(),
     description: z.string().max(500).nullable().optional(),

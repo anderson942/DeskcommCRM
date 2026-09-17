@@ -1095,6 +1095,20 @@ export function decidirSeEnfileiraOperador(input: {
   return { enfileira: true, porque: 'ligado' };
 }
 
+/**
+ * O modo "Só organizar" (0269): o Conversador lê a conversa e fecha o turno
+ * normalmente — checkpoint, declaração, enfileiramento do Operador —, mas
+ * NUNCA tem `send_message` disponível. Não é instrução de prompt: é a mesma
+ * técnica de AUSÊNCIA já usada pro papel Operador em si (spec 16 §3.2, "a
+ * separação é por ausência, e é a única forma que não depende de o modelo
+ * obedecer"). Função pura e exportada de propósito — é a linha inteira que
+ * garante zero mensagem alcança o cliente neste modo, e ela precisa ser
+ * testável sem montar o turno inteiro.
+ */
+export function deveOmitirSendMessage(operationMode: string | null | undefined): boolean {
+  return operationMode === 'operator_only';
+}
+
 async function insertCheckpoint(
   db: Queryable,
   input: { tenantId: string; leadId: string; jobId: string; content: CheckpointContent },
@@ -3322,6 +3336,15 @@ async function executarTurnoDoAgente(
     agentConfig?.activeKbVersionId == null
   ) {
     delete rawTools.search_knowledge;
+  }
+
+  // Modo "Só organizar" (0269): o Conversador não pode ter como enviar nada
+  // ao cliente — ver `deveOmitirSendMessage`. `preview` já cobre o sandbox e o
+  // rascunho assistido (nenhum dos dois entrega send_message ao adapter real);
+  // isto cobre o terceiro caso, o turno de verdade que fecha checkpoint e
+  // aciona o Operador sem nunca ter tido a ferramenta de falar.
+  if (deveOmitirSendMessage(agentConfig?.operationMode)) {
+    delete rawTools.send_message;
   }
 
   // A ferramenta de template só entra em canal que EXIGE template fora da janela.

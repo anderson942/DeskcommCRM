@@ -37,6 +37,9 @@ export function AgentOperation({ agent, readOnly }: { agent: AgentRow; readOnly?
         >
           <option value="assisted">{t("Assistido: revisar antes de enviar")}</option>
           <option value="automatic">{t("Automático: responder com as regras do agente")}</option>
+          <option value="operator_only">
+            {t("Só organizar: nunca fala com o cliente")}
+          </option>
         </select>
       </label>
       <Button
@@ -52,7 +55,11 @@ export function AgentOperation({ agent, readOnly }: { agent: AgentRow; readOnly?
         {t(
           agent.paused_at
             ? "Automático pausado. A versão publicada foi preservada e a assistência continua disponível."
-            : "O modo assistido prepara sugestões na conversa. Só a aprovação humana autoriza o envio.",
+            : agent.operation_mode === "operator_only"
+              ? "Este agente lê cada conversa e organiza o funil sozinho (etapa, follow-up, pendência) — mas não tem como enviar nada ao cliente. A ferramenta de responder nem existe para ele neste modo."
+              : agent.operation_mode === "automatic"
+                ? "O agente responde sozinho, seguindo as regras publicadas."
+                : "O modo assistido prepara sugestões na conversa. Só a aprovação humana autoriza o envio.",
         )}
       </p>
     </section>

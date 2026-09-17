@@ -17,8 +17,11 @@ import type pg from 'pg';
 
 import { lerJanelaDeAtendimento, type JanelaDeAtendimento } from './janela-de-atendimento';
 
+/** 'operator_only' (0269): Conversador nunca tem `send_message` — ver `deveOmitirSendMessage`. */
+export type OperationMode = 'automatic' | 'assisted' | 'operator_only';
+
 export interface PublishedAgentConfig {
-  operationMode?: 'automatic' | 'assisted';
+  operationMode?: OperationMode;
   pausedAt?: string | null;
   operationRevision?: string;
   agentId: string;
@@ -91,7 +94,7 @@ export interface PublishedAgentConfig {
 }
 
 interface Row {
-  operation_mode: 'automatic' | 'assisted';
+  operation_mode: OperationMode;
   paused_at: string | null;
   operation_revision: string;
   agent_id: string;
