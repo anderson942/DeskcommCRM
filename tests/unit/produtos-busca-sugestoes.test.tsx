@@ -2,15 +2,17 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * O dropdown de sugestões da busca inteligente (0270). Reaproveita o MESMO
- * `produtos` que a lista de baixo já buscou e já ranqueou — por isso o mock
- * de `apiClient.get` aqui nunca resolve (igual a
- * `produtos-popup-de-detalhe.test.tsx`): o que abre no dropdown é o
- * `inicial` passado pra `ProdutosClient`, sem depender de round-trip nenhum.
- * O que ESTE arquivo garante é só a fiação da UI — digitar mostra sugestão,
- * clicar abre o popup de detalhe certo e fecha o dropdown. O ranqueamento em
- * si já tem suíte própria em `lib/catalogo/busca.test.ts` e na rota
- * (`app/api/v1/products/route.test.ts`).
+ * O dropdown de sugestões da busca inteligente (0270), agora agrupado em
+ * sanfonas de variação (0271) — cada sugestão é um TÍTULO de grupo, não um
+ * SKU. Reaproveita o MESMO `grupos` que a lista de baixo já buscou/agrupou/
+ * ranqueou; por isso o mock de `apiClient.get` aqui nunca resolve (igual a
+ * `produtos-popup-de-detalhe.test.tsx`): o que abre no dropdown vem do
+ * `inicial` passado pra `ProdutosClient` (agrupado no cliente uma vez), sem
+ * depender de round-trip nenhum. O que ESTE arquivo garante é só a fiação da
+ * UI — digitar mostra sugestão, clicar num grupo de 1 abre o popup de
+ * detalhe, clicar num grupo de N abre a sanfona. O ranqueamento e o
+ * agrupamento em si já têm suíte própria em `lib/catalogo/busca.test.ts`,
+ * `lib/catalogo/agrupamento.test.ts` e na rota (`route.test.ts`).
  */
 
 vi.mock("@/lib/api/client", () => ({
@@ -66,7 +68,7 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe("dropdown de sugestões da busca", () => {
-  it("digitar mostra as sugestões, sem esperar o clique em 'ver mais'", () => {
+  it("digitar mostra as sugestões (título do grupo), sem esperar o clique em 'ver mais'", () => {
     montar([produto(), produto({ id: "2", codigo: "TENIS-40", nome: "Tênis Nike 40", marca: "Nike" })]);
 
     digitar("camiseta tom");
@@ -76,12 +78,13 @@ describe("dropdown de sugestões da busca", () => {
     expect(lista).toHaveTextContent("Tênis Nike 40");
   });
 
-  it("clicar numa sugestão abre o popup de detalhe do produto certo e fecha o dropdown", async () => {
+  it("grupo de 1: clicar na sugestão abre o popup de detalhe direto e fecha o dropdown", async () => {
     montar([produto(), produto({ id: "2", codigo: "TENIS-40", nome: "Tênis Nike 40", marca: "Nike" })]);
 
     digitar("nike");
-    fireEvent.mouseDown(screen.getByTestId("sugestao-TENIS-40"));
-    fireEvent.click(screen.getByTestId("sugestao-TENIS-40"));
+    // Chave do grupo é o código sem o sufixo de tamanho: "TENIS-40" -> "TENIS".
+    fireEvent.mouseDown(screen.getByTestId("sugestao-TENIS"));
+    fireEvent.click(screen.getByTestId("sugestao-TENIS"));
 
     // `findByRole` faz polling com timer real por baixo — troca pra timer
     // real aqui, senão o `waitFor` interno nunca avança (igual ao motivo do
@@ -93,6 +96,22 @@ describe("dropdown de sugestões da busca", () => {
     expect(screen.queryByTestId("sugestoes-produto")).not.toBeInTheDocument();
   });
 
+  it("grupo de N: clicar na sugestão abre a sanfona em vez do popup — não existe 'o' produto", () => {
+    montar([
+      produto({ id: "1", codigo: "VOLD-38", nome: "Calça Cinza 38 - 38" }),
+      produto({ id: "2", codigo: "VOLD-40", nome: "Calça Cinza 38 40 - 40" }),
+    ]);
+
+    digitar("calca");
+    fireEvent.mouseDown(screen.getByTestId("sugestao-VOLD"));
+    fireEvent.click(screen.getByTestId("sugestao-VOLD"));
+
+    expect(screen.queryByTestId("sugestoes-produto")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("variacoes-VOLD")).toHaveTextContent("Calça Cinza - 38");
+    expect(screen.getByTestId("variacoes-VOLD")).toHaveTextContent("Calça Cinza - 40");
+  });
+
   it("campo vazio não mostra dropdown nenhum", () => {
     montar([produto()]);
 
@@ -101,9 +120,10 @@ describe("dropdown de sugestões da busca", () => {
     expect(screen.queryByTestId("sugestoes-produto")).not.toBeInTheDocument();
   });
 
-  it("mostra no máximo 5 sugestões mesmo com mais produtos carregados", () => {
+  it("mostra no máximo 5 sugestões mesmo com mais grupos carregados", () => {
+    // Códigos sem sufixo "-NN": cada um é o próprio grupo, sem colidir entre si.
     const muitos = Array.from({ length: 8 }, (_, i) =>
-      produto({ id: String(i), codigo: `COD-${i}`, nome: `Camiseta ${i}` }),
+      produto({ id: String(i), codigo: `CAMISETA${i}`, nome: `Camiseta ${i}` }),
     );
     montar(muitos);
 

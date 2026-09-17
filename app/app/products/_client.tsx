@@ -7,6 +7,7 @@ import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { agruparProdutos, rotuloDaVariacao, type GrupoDeProdutos } from "@/lib/catalogo/agrupamento";
 import { apiClient } from "@/lib/api/client";
 import type { ApiSuccess } from "@/lib/api/wrappers";
 import { formatCents } from "@/lib/money";
@@ -95,7 +96,11 @@ export function ProdutosClient({
   const [pagina, setPagina] = React.useState(1);
   const [tamanho, setTamanho] = React.useState<Tamanho>(tamanhoInicial as Tamanho);
   const [filtroEstoque, setFiltroEstoque] = React.useState<FiltroEstoque>("todos");
-  const [produtos, setProdutos] = React.useState<Produto[]>(inicial);
+  // `inicial` vem FLAT do server component (`page.tsx`, sem mudar) — agrupa
+  // uma vez aqui só pro primeiro render; toda busca seguinte já chega
+  // agrupada da API (0271), sem precisar reagrupar no cliente.
+  const [grupos, setGrupos] = React.useState<GrupoDeProdutos<Produto>[]>(() => agruparProdutos(inicial));
+  const [gruposAbertos, setGruposAbertos] = React.useState<Set<string>>(() => new Set());
   const [total, setTotal] = React.useState(totalInicial);
   const [carregando, setCarregando] = React.useState(false);
   const [criando, setCriando] = React.useState(false);
@@ -104,11 +109,20 @@ export function ProdutosClient({
   const [importando, setImportando] = React.useState(false);
   const [resumo, setResumo] = React.useState<ResumoDaImportacao | null>(null);
   const [detalhe, setDetalhe] = React.useState<Produto | null>(null);
-  // O dropdown de sugestões reaproveita o MESMO `produtos` que a lista de
-  // baixo já buscou — a busca inteligente (0270) já devolve ranqueado por
-  // relevância, então os 5 primeiros já são as melhores sugestões, sem
+  // O dropdown de sugestões reaproveita o MESMO `grupos` que a lista de
+  // baixo já buscou — a busca inteligente (0270/0271) já devolve ranqueado
+  // por relevância, então os 5 primeiros já são as melhores sugestões, sem
   // round-trip extra pro servidor.
   const [sugestoesAbertas, setSugestoesAbertas] = React.useState(false);
+
+  function alternarGrupoAberto(chave: string) {
+    setGruposAbertos((prev) => {
+      const proximo = new Set(prev);
+      if (proximo.has(chave)) proximo.delete(chave);
+      else proximo.add(chave);
+      return proximo;
+    });
+  }
   const arquivoRef = React.useRef<HTMLInputElement>(null);
   // Incrementar isto força o efeito de busca a rodar de novo com os MESMOS
   // filtros — é o que substitui o antigo `router.refresh()` (que só refazia
@@ -140,9 +154,11 @@ export function ProdutosClient({
     if (filtroEstoque !== "todos") params.set("estoque", filtroEstoque);
 
     apiClient
-      .get<ApiSuccess<Produto[]>>(`/api/v1/products?${params.toString()}`, { signal: controller.signal })
+      .get<ApiSuccess<GrupoDeProdutos<Produto>[]>>(`/api/v1/products?${params.toString()}`, {
+        signal: controller.signal,
+      })
       .then((res) => {
-        setProdutos(res.data);
+        setGrupos(res.data);
         setTotal((res.meta?.total as number | undefined) ?? res.data.length);
       })
       .catch((e) => {
@@ -246,27 +262,31 @@ export function ProdutosClient({
             aria-expanded={sugestoesAbertas}
             aria-autocomplete="list"
           />
-          {sugestoesAbertas && busca.trim() !== "" && produtos.length > 0 ? (
+          {sugestoesAbertas && busca.trim() !== "" && grupos.length > 0 ? (
             <ul
               className="absolute z-10 mt-1 w-full rounded-md border bg-popover shadow-md"
               data-testid="sugestoes-produto"
               role="listbox"
             >
-              {produtos.slice(0, 5).map((p) => (
-                <li key={p.id}>
+              {grupos.slice(0, 5).map((g) => (
+                <li key={g.chave}>
                   <button
                     type="button"
                     role="option"
                     aria-selected={false}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
-                      setDetalhe(p);
+                      // Grupo de 1: abre o popup direto, igual sempre abriu.
+                      // Sanfona de verdade: não tem "o" produto — abre o
+                      // acordeão pra escolher a variação.
+                      if (g.variacoes.length === 1) setDetalhe(g.variacoes[0]!);
+                      else alternarGrupoAberto(g.chave);
                       setSugestoesAbertas(false);
                     }}
                     className="block w-full truncate px-3 py-2 text-left text-sm hover:bg-muted"
-                    data-testid={`sugestao-${p.codigo}`}
+                    data-testid={`sugestao-${g.chave}`}
                   >
-                    {p.nome}
+                    {g.titulo}
                   </button>
                 </li>
               ))}
@@ -490,7 +510,7 @@ export function ProdutosClient({
         </div>
       ) : null}
 
-      {produtos.length === 0 ? (
+      {grupos.length === 0 ? (
         <div className="rounded-lg border border-dashed p-8 text-center" data-testid="produtos-vazio">
           <p className="font-medium">{carregando ? t("Carregando…") : textos.vazio}</p>
           {carregando ? null : <p className="mt-1 text-sm text-muted-foreground">{textos.vazioDica}</p>}
@@ -500,47 +520,56 @@ export function ProdutosClient({
           className={`divide-y rounded-lg border ${carregando ? "opacity-60" : ""}`}
           data-testid="lista-produtos"
         >
-          {produtos.map((p) => (
-            <li key={p.id} className="flex items-center gap-4 p-3" data-testid={`produto-${p.codigo}`}>
-              <button
-                type="button"
-                onClick={() => setDetalhe(p)}
-                className="min-w-0 flex-1 text-left"
-                data-testid={`abrir-detalhe-${p.codigo}`}
-              >
-                <p className={`truncate font-medium hover:underline ${p.ativo ? "" : "text-muted-foreground line-through"}`}>
-                  {p.nome}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {p.codigo}
-                  {p.marca ? ` · ${p.marca}` : ""}
-                  {p.controla_estoque
-                    ? ` · ${p.quantidade} ${t("em estoque")}`
-                    : ` · ${t("sem controle de estoque")}`}
-                </p>
-              </button>
-              <span className="shrink-0 text-right tabular-nums">
-                {p.preco_original_cents !== null ? (
-                  <span className="mr-1.5 text-muted-foreground line-through" data-testid={`preco-de-${p.codigo}`}>
-                    {formatCents(p.preco_original_cents, p.moeda)}
-                  </span>
-                ) : null}
-                <span className="font-medium" data-testid={`preco-por-${p.codigo}`}>
-                  {formatCents(p.preco_cents, p.moeda)}
-                </span>
-              </span>
-              {podeEditar ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => void alternarAtivo(p)}
-                  data-testid={`alternar-${p.codigo}`}
+          {grupos.map((g) =>
+            g.variacoes.length === 1 ? (
+              <ProdutoLinha
+                key={g.chave}
+                p={g.variacoes[0]!}
+                podeEditar={podeEditar}
+                t={t}
+                onAbrirDetalhe={setDetalhe}
+                onAlternarAtivo={(p) => void alternarAtivo(p)}
+              />
+            ) : (
+              // Sanfona de verdade: título limpo fechado por padrão — clicar
+              // expande as variações de tamanho, cada uma abrindo o MESMO
+              // popup de detalhe que uma linha solta já abre.
+              <li key={g.chave} data-testid={`grupo-${g.chave}`}>
+                <button
+                  type="button"
+                  onClick={() => alternarGrupoAberto(g.chave)}
+                  className="flex w-full items-center justify-between gap-4 p-3 text-left hover:bg-muted/50"
+                  data-testid={`abrir-grupo-${g.chave}`}
+                  aria-expanded={gruposAbertos.has(g.chave)}
                 >
-                  {t(p.ativo ? "Desativar" : "Reativar")}
-                </Button>
-              ) : null}
-            </li>
-          ))}
+                  <span
+                    className={`min-w-0 flex-1 truncate font-medium ${g.ativo ? "" : "text-muted-foreground line-through"}`}
+                  >
+                    {g.titulo}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {g.variacoes.length} {t("variações")}
+                  </span>
+                </button>
+                {gruposAbertos.has(g.chave) ? (
+                  <ul className="divide-y border-t bg-muted/20" data-testid={`variacoes-${g.chave}`}>
+                    {g.variacoes.map((v) => (
+                      <ProdutoLinha
+                        key={v.id}
+                        p={v}
+                        rotulo={rotuloDaVariacao(v, g.titulo)}
+                        indentado
+                        podeEditar={podeEditar}
+                        t={t}
+                        onAbrirDetalhe={setDetalhe}
+                        onAlternarAtivo={(p) => void alternarAtivo(p)}
+                      />
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            ),
+          )}
         </ul>
       )}
 
@@ -572,5 +601,72 @@ export function ProdutosClient({
 
       <ProdutoDetalheDialog produto={detalhe} onClose={() => setDetalhe(null)} />
     </div>
+  );
+}
+
+/**
+ * Uma linha de produto — reaproveitada tanto pra um grupo de 1 (sem sanfona,
+ * mesmo visual de sempre) quanto pra cada variação dentro de um acordeão
+ * aberto (`rotulo`/`indentado`). `data-testid` continua `produto-${codigo}`/
+ * `abrir-detalhe-${codigo}` nos dois casos — é o que faz "clicar na variação
+ * abre o MESMO popup" ser literalmente o mesmo código, não uma cópia dele.
+ */
+function ProdutoLinha({
+  p,
+  rotulo,
+  indentado,
+  podeEditar,
+  t,
+  onAbrirDetalhe,
+  onAlternarAtivo,
+}: {
+  p: Produto;
+  rotulo?: string;
+  indentado?: boolean;
+  podeEditar: boolean;
+  t: (s: string) => string;
+  onAbrirDetalhe: (p: Produto) => void;
+  onAlternarAtivo: (p: Produto) => void;
+}) {
+  return (
+    <li
+      className={`flex items-center gap-4 p-3 ${indentado ? "pl-8" : ""}`}
+      data-testid={`produto-${p.codigo}`}
+    >
+      <button
+        type="button"
+        onClick={() => onAbrirDetalhe(p)}
+        className="min-w-0 flex-1 text-left"
+        data-testid={`abrir-detalhe-${p.codigo}`}
+      >
+        <p className={`truncate font-medium hover:underline ${p.ativo ? "" : "text-muted-foreground line-through"}`}>
+          {rotulo ?? p.nome}
+        </p>
+        {rotulo ? null : (
+          <p className="text-xs text-muted-foreground">
+            {p.codigo}
+            {p.marca ? ` · ${p.marca}` : ""}
+            {p.controla_estoque
+              ? ` · ${p.quantidade} ${t("em estoque")}`
+              : ` · ${t("sem controle de estoque")}`}
+          </p>
+        )}
+      </button>
+      <span className="shrink-0 text-right tabular-nums">
+        {p.preco_original_cents !== null ? (
+          <span className="mr-1.5 text-muted-foreground line-through" data-testid={`preco-de-${p.codigo}`}>
+            {formatCents(p.preco_original_cents, p.moeda)}
+          </span>
+        ) : null}
+        <span className="font-medium" data-testid={`preco-por-${p.codigo}`}>
+          {formatCents(p.preco_cents, p.moeda)}
+        </span>
+      </span>
+      {podeEditar ? (
+        <Button variant="ghost" size="sm" onClick={() => onAlternarAtivo(p)} data-testid={`alternar-${p.codigo}`}>
+          {t(p.ativo ? "Desativar" : "Reativar")}
+        </Button>
+      ) : null}
+    </li>
   );
 }

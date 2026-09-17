@@ -138,90 +138,171 @@ vi.mock("@/lib/impersonate/support", async (importOriginal) => ({
 }));
 
 /**
- * GET /api/v1/products?busca=… — a busca inteligente (0270).
+ * GET /api/v1/products?busca=… — a busca inteligente (0270) + a sanfona de
+ * variações (0271).
  *
  * ⚠️ O QUE ESTE ARQUIVO GUARDA, E O QUE ELE NÃO GUARDA. O ranqueamento em si
  * (palavra aproximada, número exato) já tem suíte própria em
- * `lib/catalogo/busca.test.ts` — não repetido aqui. O que é específico DESTA
- * rota, e por isso mora aqui: ela CHAMA a rede larga do banco com os
- * parâmetros certos (organização de fonte confiável, não do query string),
- * ela RANQUEIA o que a rede devolveu em vez de confiar na ordem do banco, e
- * ela PAGINA depois de ranquear — os três jeitos de esta integração quebrar
- * sem que o teste do motor de busca visse nada.
+ * `lib/catalogo/busca.test.ts`, e o agrupamento em si em
+ * `lib/catalogo/agrupamento.test.ts` — não repetidos aqui. O que é
+ * específico DESTA rota: ela CHAMA a fonte certa com os parâmetros certos
+ * (organização de fonte confiável, não do query string), ela AGRUPA e
+ * RANQUEIA em vez de confiar na ordem do banco, e ela PAGINA depois disso —
+ * os jeitos de esta integração quebrar sem que os testes de unidade vissem
+ * nada.
  */
 function requisicaoDeBusca(query: string): NextRequest {
   return new NextRequest(`http://localhost/api/v1/products?${query}`);
 }
 
-function supabaseParaBusca(candidatos: Array<Record<string, unknown>>) {
-  const chamada: { nome: string | null; params: Record<string, unknown> | null } = {
-    nome: null,
-    params: null,
-  };
+function supabaseComRpc(porFuncao: Record<string, Array<Record<string, unknown>>>) {
+  const chamadas: Array<{ nome: string; params: Record<string, unknown> }> = [];
   return {
     supabase: {
       rpc: (nome: string, params: Record<string, unknown>) => {
-        chamada.nome = nome;
-        chamada.params = params;
-        return Promise.resolve({ data: candidatos, error: null });
+        chamadas.push({ nome, params });
+        return Promise.resolve({ data: porFuncao[nome] ?? [], error: null });
       },
     },
-    chamada,
+    chamadas,
   };
 }
 
-describe("GET /api/v1/products?busca= — rede larga + ranqueamento fino", () => {
+describe("GET /api/v1/products?busca= — rede larga + agrupamento + ranqueamento fino", () => {
   it("chama a rede larga com a organização de fonte confiável, não do query string", async () => {
-    const { supabase, chamada } = supabaseParaBusca([]);
+    const { supabase, chamadas } = supabaseComRpc({ fn_buscar_produtos_candidatos: [] });
     vi.mocked(createClient).mockResolvedValue(supabase as never);
     const { GET } = await import("./route");
 
     await GET(requisicaoDeBusca(`busca=camiseta&organization_id=${"33333333-3333-4333-8333-333333333333"}`));
 
-    expect(chamada.nome).toBe("fn_buscar_produtos_candidatos");
+    expect(chamadas[0]!.nome).toBe("fn_buscar_produtos_candidatos");
     // O `organization_id` do query string (um valor de outra org, no teste) tem
     // de ser IGNORADO — é a mesma classe de guarda que o POST já prova acima.
-    expect((chamada.params as { p_organization_id: string }).p_organization_id).toBe(ORG_ID);
+    expect((chamadas[0]!.params as { p_organization_id: string }).p_organization_id).toBe(ORG_ID);
   });
 
-  it("ranqueia os candidatos — a ordem do banco não é a resposta final", async () => {
+  it("ranqueia os GRUPOS pelo título — a ordem do banco não é a resposta final", async () => {
     // "Camisa" empata por substring com "camiseta" nas duas, mas só a segunda
     // é prefixo de verdade da palavra buscada — o banco não sabe disso, quem
     // sabe é `lib/catalogo/busca.ts`. Candidatos vêm do banco FORA de ordem
     // de propósito, pra provar que é a rota (via `ordenarPorRelevancia`) quem
     // reordena, não o banco.
-    const { supabase } = supabaseParaBusca([
-      { id: "1", codigo: "A", nome: "Blusa qualquer", marca: null, categoria: null },
-      { id: "2", codigo: "B", nome: "Camiseta Azul", marca: null, categoria: null },
-    ]);
+    const { supabase } = supabaseComRpc({
+      fn_buscar_produtos_candidatos: [
+        { id: "1", codigo: "A", nome: "Blusa qualquer", marca: null, categoria: null, ativo: true },
+        { id: "2", codigo: "B", nome: "Camiseta Azul", marca: null, categoria: null, ativo: true },
+      ],
+    });
     vi.mocked(createClient).mockResolvedValue(supabase as never);
     const { GET } = await import("./route");
 
     const resposta = await GET(requisicaoDeBusca("busca=camiseta"));
-    const corpo = (await resposta.json()) as { data: Array<{ codigo: string }> };
+    const corpo = (await resposta.json()) as { data: Array<{ chave: string; titulo: string }> };
 
-    expect(corpo.data.map((p) => p.codigo)).toEqual(["B"]);
+    expect(corpo.data.map((g) => g.chave)).toEqual(["B"]);
+    expect(corpo.data[0]!.titulo).toBe("Camiseta Azul");
   });
 
-  it("pagina DEPOIS de ranquear — página 2 não é um corte cru do banco", async () => {
+  it("agrupa candidatos do MESMO código-base num único item, mesmo vindo como SKUs separados", async () => {
+    // As duas linhas são variações de tamanho do mesmo produto (código com
+    // sufixo "-NN") — a busca não pode devolver duas entradas pra sanfona.
+    const { supabase } = supabaseComRpc({
+      fn_buscar_produtos_candidatos: [
+        { id: "1", codigo: "VOLD-38", nome: "Calça Cinza 38 - 38", marca: null, categoria: null, ativo: true },
+        { id: "2", codigo: "VOLD-40", nome: "Calça Cinza 38 40 - 40", marca: null, categoria: null, ativo: true },
+      ],
+    });
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+    const { GET } = await import("./route");
+
+    const resposta = await GET(requisicaoDeBusca("busca=calca"));
+    const corpo = (await resposta.json()) as {
+      data: Array<{ chave: string; titulo: string; variacoes: unknown[] }>;
+    };
+
+    expect(corpo.data).toHaveLength(1);
+    expect(corpo.data[0]!.titulo).toBe("Calça Cinza");
+    expect(corpo.data[0]!.variacoes).toHaveLength(2);
+  });
+
+  it("pagina DEPOIS de agrupar e ranquear — página 2 não é um corte cru do banco", async () => {
     const candidatos = Array.from({ length: 15 }, (_, i) => ({
       id: String(i),
       codigo: `C${i}`,
       nome: `Camiseta ${i}`,
       marca: null,
       categoria: null,
+      ativo: true,
     }));
-    const { supabase } = supabaseParaBusca(candidatos);
+    const { supabase } = supabaseComRpc({ fn_buscar_produtos_candidatos: candidatos });
     vi.mocked(createClient).mockResolvedValue(supabase as never);
     const { GET } = await import("./route");
 
     const resposta = await GET(requisicaoDeBusca("busca=camiseta&pagina=2&tamanho=10"));
     const corpo = (await resposta.json()) as {
-      data: Array<{ codigo: string }>;
+      data: Array<{ chave: string }>;
       meta: { total: number };
     };
 
     expect(corpo.data).toHaveLength(5);
     expect(corpo.meta.total).toBe(15);
+  });
+});
+
+describe("GET /api/v1/products (sem busca) — agrupamento e paginação no banco (0271)", () => {
+  it("chama fn_listar_produtos_agrupados com a organização de fonte confiável e o estoque pedido", async () => {
+    const { supabase, chamadas } = supabaseComRpc({ fn_listar_produtos_agrupados: [] });
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+    const { GET } = await import("./route");
+
+    await GET(requisicaoDeBusca("estoque=disponivel&pagina=2&tamanho=10"));
+
+    expect(chamadas[0]!.nome).toBe("fn_listar_produtos_agrupados");
+    expect(chamadas[0]!.params).toMatchObject({
+      p_organization_id: ORG_ID,
+      p_estoque: "disponivel",
+      p_limite: 10,
+      p_offset: 10,
+    });
+  });
+
+  it("devolve os grupos e o total de GRUPOS que a função já devolveu prontos", async () => {
+    const { supabase } = supabaseComRpc({
+      fn_listar_produtos_agrupados: [
+        {
+          chave_grupo: "VOLD",
+          titulo: "Calça Cinza",
+          ativo_do_grupo: true,
+          variacoes: [{ id: "1", codigo: "VOLD-38" }],
+          total_grupos: 42,
+        },
+      ],
+    });
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+    const { GET } = await import("./route");
+
+    const resposta = await GET(requisicaoDeBusca(""));
+    const corpo = (await resposta.json()) as {
+      data: Array<{ chave: string; titulo: string; ativo: boolean; variacoes: unknown[] }>;
+      meta: { total: number };
+    };
+
+    expect(corpo.data).toEqual([
+      { chave: "VOLD", titulo: "Calça Cinza", ativo: true, variacoes: [{ id: "1", codigo: "VOLD-38" }] },
+    ]);
+    expect(corpo.meta.total).toBe(42);
+  });
+
+  it("lista vazia devolve total 0, não quebra lendo total_grupos de um array sem linha nenhuma", async () => {
+    const { supabase } = supabaseComRpc({ fn_listar_produtos_agrupados: [] });
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+    const { GET } = await import("./route");
+
+    const resposta = await GET(requisicaoDeBusca(""));
+    const corpo = (await resposta.json()) as { data: unknown[]; meta: { total: number } };
+
+    expect(corpo.data).toEqual([]);
+    expect(corpo.meta.total).toBe(0);
   });
 });
