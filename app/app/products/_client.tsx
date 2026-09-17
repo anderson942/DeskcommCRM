@@ -538,10 +538,13 @@ export function ProdutosClient({
                 <button
                   type="button"
                   onClick={() => alternarGrupoAberto(g.chave)}
-                  className="flex w-full items-center justify-between gap-4 p-3 text-left hover:bg-muted/50"
+                  className="flex w-full items-center gap-3 p-3 text-left hover:bg-muted/50"
                   data-testid={`abrir-grupo-${g.chave}`}
                   aria-expanded={gruposAbertos.has(g.chave)}
                 >
+                  <span className="w-3 shrink-0 text-center text-muted-foreground" aria-hidden="true">
+                    {gruposAbertos.has(g.chave) ? "−" : "+"}
+                  </span>
                   <span
                     className={`min-w-0 flex-1 truncate font-medium ${g.ativo ? "" : "text-muted-foreground line-through"}`}
                   >
@@ -552,7 +555,7 @@ export function ProdutosClient({
                   </span>
                 </button>
                 {gruposAbertos.has(g.chave) ? (
-                  <ul className="divide-y border-t bg-muted/20" data-testid={`variacoes-${g.chave}`}>
+                  <ul className="divide-y border-t bg-muted/40" data-testid={`variacoes-${g.chave}`}>
                     {g.variacoes.map((v) => (
                       <ProdutoLinha
                         key={v.id}
@@ -630,7 +633,7 @@ function ProdutoLinha({
 }) {
   return (
     <li
-      className={`flex items-center gap-4 p-3 ${indentado ? "pl-8" : ""}`}
+      className={`flex items-center gap-4 p-3 ${indentado ? "bg-muted/40 pl-8" : ""}`}
       data-testid={`produto-${p.codigo}`}
     >
       <button
@@ -642,15 +645,13 @@ function ProdutoLinha({
         <p className={`truncate font-medium hover:underline ${p.ativo ? "" : "text-muted-foreground line-through"}`}>
           {rotulo ?? p.nome}
         </p>
-        {rotulo ? null : (
-          <p className="text-xs text-muted-foreground">
-            {p.codigo}
-            {p.marca ? ` · ${p.marca}` : ""}
-            {p.controla_estoque
-              ? ` · ${p.quantidade} ${t("em estoque")}`
-              : ` · ${t("sem controle de estoque")}`}
-          </p>
-        )}
+        <p className="text-xs text-muted-foreground">
+          {p.codigo}
+          {p.marca ? ` · ${p.marca}` : ""}
+          {p.controla_estoque
+            ? ` · ${p.quantidade} ${t("em estoque")}`
+            : ` · ${t("sem controle de estoque")}`}
+        </p>
       </button>
       <span className="shrink-0 text-right tabular-nums">
         {p.preco_original_cents !== null ? (

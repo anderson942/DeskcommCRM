@@ -88,7 +88,7 @@ describe("sanfona de variações na lista de produtos", () => {
     expect(screen.queryByTestId("variacoes-VOLD000000425")).not.toBeInTheDocument();
   });
 
-  it("clicar expande: cada variação aparece como 'título - tamanho', com seu próprio preço", () => {
+  it("clicar expande: cada variação aparece como 'título - tamanho', com seu próprio preço, SKU e estoque", () => {
     montar(variacoesDaCalca());
 
     fireEvent.click(screen.getByTestId("abrir-grupo-VOLD000000425"));
@@ -100,6 +100,30 @@ describe("sanfona de variações na lista de produtos", () => {
     // Preço "de/por" por variação, igual a uma linha solta.
     expect(screen.getByTestId("preco-por-VOLD000000425-38")).toHaveTextContent("R$ 207,00");
     expect(screen.getByTestId("preco-de-VOLD000000425-38")).toHaveTextContent("R$ 249,00");
+    // SKU e estoque continuam aparecendo por variação, igual a uma linha solta.
+    expect(screen.getByTestId("produto-VOLD000000425-38")).toHaveTextContent("VOLD000000425-38");
+    expect(screen.getByTestId("produto-VOLD000000425-38")).toHaveTextContent("9 em estoque");
+    expect(screen.getByTestId("produto-VOLD000000425-40")).toHaveTextContent("37 em estoque");
+  });
+
+  it("indicador '+' fechado vira '−' aberto", () => {
+    montar(variacoesDaCalca());
+
+    const abrir = screen.getByTestId("abrir-grupo-VOLD000000425");
+    expect(abrir).toHaveTextContent("+");
+    expect(abrir).not.toHaveTextContent("−");
+
+    fireEvent.click(abrir);
+
+    expect(abrir).toHaveTextContent("−");
+    expect(abrir).not.toHaveTextContent("+");
+  });
+
+  it("linha de variação tem classe de fundo diferente da linha solta, pra indicar subcategoria", () => {
+    montar(variacoesDaCalca());
+    fireEvent.click(screen.getByTestId("abrir-grupo-VOLD000000425"));
+
+    expect(screen.getByTestId("produto-VOLD000000425-38").className).toContain("bg-muted");
   });
 
   it("clicar de novo recolhe a sanfona", () => {
