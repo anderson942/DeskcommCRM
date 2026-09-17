@@ -40,6 +40,8 @@ const config: VercelConfig = {
     // pela Shoppub em 2026-09-16 (linha fica dormente — ver entrypoint.sh).
     { path: "/api/v1/cron/tiny-stock-sync", schedule: "*/5 * * * *" },
     { path: "/api/v1/cron/shoppub-backfill", schedule: "*/5 * * * *" },
+    { path: "/api/v1/cron/shoppub-customer-sync", schedule: "*/7 * * * *" },
+    { path: "/api/v1/cron/shoppub-order-sync", schedule: "*/11 * * * *" },
     { path: "/api/v1/cron/contact-phones", schedule: "*/30 * * * *" },
     { path: "/api/v1/cron/contact-proposals-watcher", schedule: "17 * * * *" },
     { path: "/api/v1/cron/lgpd-sla-watcher", schedule: "0 12 * * *" },

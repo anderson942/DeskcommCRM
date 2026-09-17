@@ -97,6 +97,21 @@ CRONS="
 # preço e estoque no mesmo request — sem a chamada extra por produto que a
 # Tiny exigia.
 */5 * * * *|90|api/v1/cron/shoppub-backfill
+# CLIENTES DA SHOPPUB — alimenta "Pedidos recentes" no painel do contato
+# (Inbox), pedido do Anderson (2026-09-17). Sem webhook de cliente
+# documentado, então é polling puro, como a carga do catálogo. Cadência
+# DIFERENTE (7min, não 5) de propósito: as duas rodam contra a MESMA conta
+# Shoppub (rate limit é por CONTA, não por rota), então cravar as duas no
+# mesmo `*/5` as faria brigar pelo teto de 120 req/min toda vez que caem no
+# mesmo minuto — 7 é primo com 5, então as duas raramente coincidem.
+*/7 * * * *|90|api/v1/cron/shoppub-customer-sync
+# PEDIDOS DA SHOPPUB — alimenta a MESMA seção "Pedidos recentes" que os
+# clientes, mas escreve em `orders` (não `commerce_customers`) e casa por
+# telefone com `contacts`, não por CPF. Cadência PRÓPRIA (11min): terceira
+# rodada contra a MESMA conta Shoppub do catálogo (5min) e dos clientes
+# (7min) — 11 é primo com os dois, então as três raramente colidem no mesmo
+# minuto e disputam o teto de 120 req/min.
+*/11 * * * *|90|api/v1/cron/shoppub-order-sync
 # O CASO PARADO. De hora em hora, e não a cada 5 minutos: o prazo é de 24h, e
 # uma varredura mais frequente só gastaria consulta para descobrir o mesmo nada.
 7 * * * *|60|api/v1/cron/case-stale-watcher

@@ -70,6 +70,58 @@ interface ShoppubCategoriasPage {
   results: ShoppubCategoria[];
 }
 
+/**
+ * Só os campos que `mapearCliente` usa — o objeto real da Shoppub tem
+ * dezenas de campos (endereço, CPF, sexo, IBGE…), lidos direto em
+ * `lib/shoppub/mapear-cliente.ts` se algum dia fizer falta mais.
+ */
+export interface ShoppubCliente {
+  id: number;
+  nome: string;
+  email: string | null;
+  telefone1: string | null;
+  celular: string | null;
+  bloqueado: boolean;
+  total_gasto: string | number | null;
+  quantidade_pedidos: number | null;
+  quantidade_pedidos_pagos: number | null;
+  ticket_medio: string | number | null;
+  data_ultimo_pedido: string | null;
+}
+
+interface ShoppubClientesPage {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: ShoppubCliente[];
+}
+
+/**
+ * `status`/`status_resumido` NÃO estão documentados com uma tabela de
+ * valores — medido contra pedidos reais (2026-09-17): `data_pagamento`
+ * presente casa sempre com `status: 1`. `mapearPedido` usa a PRESENÇA de
+ * `data_pagamento`, não o código numérico, exatamente por isso — é o único
+ * sinal confirmado contra dado real, não um número cujo significado eu
+ * chutei.
+ */
+export interface ShoppubPedido {
+  id: number;
+  status: number;
+  status_resumido: number;
+  data: string;
+  data_pagamento: string | null;
+  telefone1: string | null;
+  celular: string | null;
+  valor_total: string | number;
+}
+
+interface ShoppubPedidosPage {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: ShoppubPedido[];
+}
+
 interface ClientOpts {
   subdominio: string;
   token: string;
@@ -190,5 +242,24 @@ export class ShoppubApiClient {
       if (!resposta.next) break;
     }
     return todas;
+  }
+
+  /**
+   * Uma página de clientes. `page_size` foi TESTADO contra a loja real
+   * (2026-09-17): pedir 200 devolve 100 — o teto do endpoint é 100, não o
+   * que se pede. Passar 100 aqui é só deixar explícito o que já acontece.
+   */
+  listarClientes(opts: { page?: number } = {}): Promise<ShoppubClientesPage> {
+    return this.request<ShoppubClientesPage>("/clientes/", { page: opts.page, page_size: 100 });
+  }
+
+  /** `minData`/`maxData` filtram por data de criação do pedido. */
+  listarPedidos(opts: { page?: number; minData?: string; maxData?: string } = {}): Promise<ShoppubPedidosPage> {
+    return this.request<ShoppubPedidosPage>("/pedidos/", {
+      page: opts.page,
+      page_size: 100,
+      min_data: opts.minData,
+      max_data: opts.maxData,
+    });
   }
 }
