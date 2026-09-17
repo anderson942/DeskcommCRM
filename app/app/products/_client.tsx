@@ -104,6 +104,11 @@ export function ProdutosClient({
   const [importando, setImportando] = React.useState(false);
   const [resumo, setResumo] = React.useState<ResumoDaImportacao | null>(null);
   const [detalhe, setDetalhe] = React.useState<Produto | null>(null);
+  // O dropdown de sugestões reaproveita o MESMO `produtos` que a lista de
+  // baixo já buscou — a busca inteligente (0270) já devolve ranqueado por
+  // relevância, então os 5 primeiros já são as melhores sugestões, sem
+  // round-trip extra pro servidor.
+  const [sugestoesAbertas, setSugestoesAbertas] = React.useState(false);
   const arquivoRef = React.useRef<HTMLInputElement>(null);
   // Incrementar isto força o efeito de busca a rodar de novo com os MESMOS
   // filtros — é o que substitui o antigo `router.refresh()` (que só refazia
@@ -221,13 +226,53 @@ export function ProdutosClient({
       </header>
 
       <div className="mb-3 flex flex-wrap items-center gap-3">
-        <input
-          value={buscaDigitada}
-          onChange={(e) => setBuscaDigitada(e.target.value)}
-          placeholder={t("Buscar por nome, código ou marca")}
-          className="h-9 w-full max-w-sm rounded-md border px-3 text-sm"
-          data-testid="busca-produto"
-        />
+        <div className="relative w-full max-w-sm">
+          <input
+            value={buscaDigitada}
+            onChange={(e) => {
+              setBuscaDigitada(e.target.value);
+              setSugestoesAbertas(e.target.value.trim() !== "");
+            }}
+            onFocus={() => setSugestoesAbertas(buscaDigitada.trim() !== "")}
+            // `onMouseDown` com `preventDefault`, não `onBlur` com timeout: o
+            // blur do input dispararia ANTES do `onClick` da sugestão, e a
+            // lista fecharia antes do clique registrar. Impedir o foco de sair
+            // do input no mousedown deixa o clique na sugestão completar.
+            onBlur={() => setSugestoesAbertas(false)}
+            placeholder={t("Buscar por nome, código ou marca")}
+            className="h-9 w-full rounded-md border px-3 text-sm"
+            data-testid="busca-produto"
+            role="combobox"
+            aria-expanded={sugestoesAbertas}
+            aria-autocomplete="list"
+          />
+          {sugestoesAbertas && busca.trim() !== "" && produtos.length > 0 ? (
+            <ul
+              className="absolute z-10 mt-1 w-full rounded-md border bg-popover shadow-md"
+              data-testid="sugestoes-produto"
+              role="listbox"
+            >
+              {produtos.slice(0, 5).map((p) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={false}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setDetalhe(p);
+                      setSugestoesAbertas(false);
+                    }}
+                    className="block w-full truncate px-3 py-2 text-left text-sm hover:bg-muted"
+                    data-testid={`sugestao-${p.codigo}`}
+                  >
+                    {p.nome}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
         {podeEditar ? (
           <>
             <Button onClick={() => setCriando((v) => !v)} data-testid="novo-produto">

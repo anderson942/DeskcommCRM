@@ -14,6 +14,7 @@ import { audit } from "@/lib/audit";
 import { fail, ok } from "@/lib/api/wrappers";
 import { requireRole } from "@/lib/auth/require-role";
 import { moedaDaOrganizacao } from "@/lib/catalogo/moeda-da-org";
+import { ordenarPorRelevancia, tokenizar, type ProdutoBuscavel } from "@/lib/catalogo/busca";
 import { COLUNAS_DO_PRODUTO, produtoCreateSchema } from "@/lib/schemas/produtos";
 import { createClient } from "@/lib/supabase/server";
 import { traduzir } from "@/lib/i18n/dicionario";
@@ -25,6 +26,16 @@ export const dynamic = "force-dynamic";
  * tudo isso de uma vez trava a aba em vez de ajudar quem só queria ver mais. */
 const TAMANHOS_VALIDOS = [10, 25, 50, 100] as const;
 const TETO_TUDO = 2000;
+
+/**
+ * Quantos candidatos a rede larga do banco traz pro ranqueamento fino do
+ * `lib/catalogo/busca.ts` refinar. Grande o bastante pra não perder produto
+ * de verdade (a rede é generosa de propósito — ver a migration 0270), pequeno
+ * o bastante pra ranquear em memória sem pesar a resposta a cada tecla.
+ */
+const CANDIDATOS_DA_BUSCA = 500;
+
+type LinhaDeProduto = ProdutoBuscavel & Record<string, unknown>;
 
 function paginaEhTamanho(req: NextRequest): { pagina: number; tamanho: number } {
   const params = req.nextUrl.searchParams;
@@ -49,15 +60,40 @@ export async function GET(req: NextRequest): Promise<Response> {
   const { pagina, tamanho } = paginaEhTamanho(req);
   const supabase = await createClient();
 
+  // Com busca: rede larga no banco (migration 0270 — tolera erro de
+  // digitação e ordem trocada de palavra via o índice de trigrama que já
+  // existia e nunca tinha sido usado por nada) + ranqueamento fino em
+  // memória com o MESMO motor que o agente de IA já usa (`lib/catalogo/busca.ts`)
+  // — não duas buscas diferentes, a mesma lógica calibrada nos dois lugares.
+  // Paginação, nesse caminho, acontece DEPOIS do ranqueamento: a ordem certa
+  // só existe depois de pontuar, então `.range()` do banco não serve mais.
+  if (busca !== "") {
+    const { palavras } = tokenizar(busca);
+    const { data, error } = await supabase.rpc("fn_buscar_produtos_candidatos", {
+      p_organization_id: authz.org.orgId,
+      p_busca: busca,
+      p_palavras: palavras,
+      p_estoque: estoque === "disponivel" || estoque === "esgotado" ? estoque : null,
+      p_limite: CANDIDATOS_DA_BUSCA,
+    });
+
+    if (error) return fail("internal_error", "Erro ao listar os produtos.", 500, { requestId });
+
+    const achados = ordenarPorRelevancia((data ?? []) as LinhaDeProduto[], busca);
+    const desde = (pagina - 1) * tamanho;
+    const pagina_de_produtos = achados.slice(desde, desde + tamanho).map((a) => a.produto);
+
+    return ok(pagina_de_produtos, {
+      requestId,
+      meta: { total: achados.length, pagina, tamanho },
+    });
+  }
+
   let q = supabase
     .from("catalog_products")
     .select(COLUNAS_DO_PRODUTO, { count: "exact" })
     .eq("organization_id", authz.org.orgId);
 
-  // A busca da TELA é substring simples, de propósito: quem opera a loja digita
-  // o nome como cadastrou. A busca por token (que tolera "ifone") é a do
-  // AGENTE, em `lib/catalogo/busca.ts`, e ela responde a outra pergunta.
-  if (busca !== "") q = q.or(`nome.ilike.%${busca}%,codigo.ilike.%${busca}%,marca.ilike.%${busca}%`);
   if (estoque === "disponivel") q = q.gt("quantidade", 1);
   else if (estoque === "esgotado") q = q.eq("quantidade", 0);
 
