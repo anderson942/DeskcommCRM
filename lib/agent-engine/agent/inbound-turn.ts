@@ -2116,10 +2116,21 @@ async function executarTurnoDoAgente(
         (agentConfig !== null && matchesHandoffKeyword(texto, agentConfig.handoffKeywords)),
     )
   ) {
-    const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
-      ...avisoDaEscalacao().base,
-      motivo: 'pediu_humano',
-    });
+    // operator_only NUNCA fala com o lead (`deveOmitirSendMessage`) — e este
+    // aviso é um ENVIO DE VERDADE pelo canal, fora da ferramenta `send_message`,
+    // então a ausência da ferramenta não o protege. Achado em produção
+    // (2026-09-18): sem esta guarda, reavaliar conversas antigas onde o
+    // cliente um dia pediu atendente fazia o Conferidor de Funil — que não
+    // deveria ter como enviar NADA — mandar uma mensagem de verdade pro
+    // cliente. `performHumanHandoff` continua rodando (force_human, silêncio,
+    // inbox são trabalho de organizar o CRM, papel legítimo do Operador);
+    // só o ENVIO ao lead é que fica de fora.
+    const aviso = deveOmitirSendMessage(agentConfig?.operationMode)
+      ? ({ avisado: false, porque: 'agente_nao_fala_com_cliente' } as const)
+      : await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
+          ...avisoDaEscalacao().base,
+          motivo: 'pediu_humano',
+        });
     await performHumanHandoff(
       pool,
       { tenantId, leadId, conversationId: input.conversationId },
@@ -2149,10 +2160,13 @@ async function executarTurnoDoAgente(
     // CONFIRMA a parada, que é o padrão de mensageria para um opt-out, e diz que
     // uma pessoa vai conferir. Sair calado deixaria a pessoa sem saber se o
     // pedido dela foi ouvido — e ela pediu justamente para ser ouvida.
-    const aviso = await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
-      ...avisoDaEscalacao().base,
-      motivo: 'suspeita_de_opt_out',
-    });
+    // Mesma guarda do bloco de handoff explícito acima — ver o comentário lá.
+    const aviso = deveOmitirSendMessage(agentConfig?.operationMode)
+      ? ({ avisado: false, porque: 'agente_nao_fala_com_cliente' } as const)
+      : await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
+          ...avisoDaEscalacao().base,
+          motivo: 'suspeita_de_opt_out',
+        });
     await performHumanHandoff(
       pool,
       { tenantId, leadId, conversationId: input.conversationId },
@@ -3153,8 +3167,17 @@ async function executarTurnoDoAgente(
           // em cima seria o robô dizendo duas vezes a mesma coisa, com palavras
           // diferentes. Confiamos na fala dele e registramos que o piso não foi
           // preciso.
-          const aviso =
-            seq === 0
+          // Mesma guarda de `deveOmitirSendMessage` dos avisos determinísticos
+          // acima: `request_human_handoff` continua disponível pro
+          // operator_only (é ação de CRM, papel legítimo do Operador), mas o
+          // "piso" de avisar o lead é um ENVIO DE VERDADE fora da ferramenta
+          // `send_message` — sem esta guarda, o mesmo vazamento medido em
+          // produção (2026-09-18) valeria aqui também. `avisado: false` aqui,
+          // não `true`: dizer que avisou sem ter avisado seria mentir pro
+          // resto do fluxo, não só pro cliente.
+          const aviso = deveOmitirSendMessage(agentConfig?.operationMode)
+            ? ({ avisado: false, porque: 'agente_nao_fala_com_cliente' } as const)
+            : seq === 0
               ? await avisarLeadDaEscalacao(pool, avisoDaEscalacao().ids, {
                   ...avisoDaEscalacao().base,
                   motivo: 'pediu_humano',
@@ -3387,7 +3410,10 @@ async function executarTurnoDoAgente(
       preview && !preview.channelId
         ? DEFAULT_CHANNEL_PROVIDER
         : await loadChannelProvider(pool, tenantId, input.channelSessionId);
-    if (!capabilitiesOf(provider).requiresTemplates) {
+    // `send_template` é OUTRO jeito de falar com o cliente, separado de
+    // `send_message` — a mesma ausência de `deveOmitirSendMessage` vale aqui,
+    // senão operator_only ficaria sem uma ferramenta e com a outra.
+    if (!capabilitiesOf(provider).requiresTemplates || deveOmitirSendMessage(agentConfig?.operationMode)) {
       delete rawTools.send_template;
     }
   }
