@@ -638,7 +638,7 @@ function ProdutoLinha({
 }) {
   return (
     <li
-      className={`flex items-center gap-4 p-3 ${indentado ? "bg-muted/40 pl-8" : ""}`}
+      className={`flex items-center gap-4 p-3 ${indentado ? "bg-muted/40 pl-14" : ""}`}
       data-testid={`produto-${p.codigo}`}
     >
       <button
