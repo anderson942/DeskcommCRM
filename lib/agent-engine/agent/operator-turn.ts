@@ -43,7 +43,6 @@ import type { InboundTurnDeps } from './inbound-turn';
 import { checkpointDoJob } from './inbound-turn';
 import { declaracaoDoTurnoSchema, promessasEmAberto, type DeclaracaoDoTurno } from './declaracao';
 import { loadPublishedAgentConfigById } from './agent-config';
-import { isLeadInHandoff } from './human-handoff';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import { renderAgora } from '@/lib/tempo/agora';
 import { insertInboxItem } from '../db/repository';
@@ -144,7 +143,7 @@ export function renderBriefingDoOperador(
  *  alguém faria a seguir, à timeline do lead. */
 export type DesfechoDoOperador =
   | { tipo: 'nada_a_fazer'; porque: 'declaracao_vazia' }
-  | { tipo: 'pulado'; porque: 'papel_desligado' | 'sem_agente' | 'handoff_humano' }
+  | { tipo: 'pulado'; porque: 'papel_desligado' | 'sem_agente' }
   | { tipo: 'agiu'; ferramentas: number };
 
 /**
@@ -286,42 +285,24 @@ export function createOperatorTurnHandler(deps: InboundTurnDeps) {
       origin_job_id: payload.origin_job_id,
     });
 
-    // Um humano assumiu ENTRE o turno do Conversador e este job. O Operador é
-    // enfileirado no fim daquele turno e roda depois — inclusive depois de um
-    // handoff pedido NO MEIO dele (a tool `request_human_handoff`) ou pelo botão
-    // "assumir eu" da tela. Escrever no CRM aqui seria a IA operando por cima da
-    // pessoa que assumiu, e handoff não se revoga pelo agente.
+    // Um humano pode ter assumido ENTRE o turno do Conversador e este job — pela
+    // tool `request_human_handoff`, pelo botão "assumir eu" da tela, ou só por ter
+    // respondido manualmente pelo CRM (que arma `bot_silenced_until` por uma
+    // janela curta, renovada a cada mensagem humana — ver `_handler.ts` de
+    // messages). NENHUM desses casos impede o Operador de agir mais: ele nunca
+    // teve `send_message` (é `operator_only` por ausência de ferramenta, não por
+    // prompt), então "escrever no CRM por cima do humano" não é o risco que
+    // `isLeadInHandoff` existe para evitar — o risco é FALAR por cima, e isso já
+    // está bloqueado noutro lugar (`deveOmitirSendMessage`, a lista de ferramentas
+    // do papel).
     //
-    // A guarda é AQUI, na EXECUÇÃO, e não no enfileiramento: o estado nasce
-    // durante o turno anterior e pode mudar depois dele, então só o instante da
-    // execução lê o estado que vale. Era o único dos quatro handlers de turno sem
-    // ela — `inbound-turn` e `followup-turn` a têm, e o formato aqui é o deles
-    // (registrar o motivo e sair). Persistir o desfecho de cada caminho é
-    // trabalho separado, e vale para os quatro do mesmo jeito.
-    if (await isLeadInHandoff(pool, tenantId, leadId)) {
-      // Único caminho que sai SEM apurar promessa, e é deliberado: quem assumiu
-      // está com a conversa aberta na frente. Abrir um item de Central para uma
-      // pessoa que já está olhando é o alarme redundante que ensina a ignorar os
-      // outros. O desfecho vai a registro do mesmo jeito.
-      await registrarDesfecho(
-        pool,
-        {
-          tenantId,
-          leadId,
-          jobId: job.id,
-          originJobId: payload.origin_job_id,
-          conversationId: payload.conversation_id,
-          agentId: payload.agent_id,
-          desfecho: { tipo: 'pulado', porque: 'handoff_humano' },
-          promessasDeclaradas: 0,
-          dono: null,
-          ferramentasChamadas: [],
-          houveCheckpoint: null,
-        },
-        log,
-      );
-      return;
-    }
+    // Decisão do Anderson (2026-09-18): no modelo atual, atendimento é 100% humano
+    // — o atendente está SEMPRE respondendo, então `bot_silenced_until` fica quase
+    // sempre renovado, e bloquear o Operador aqui o deixaria parado o tempo
+    // inteiro, que é justamente o único trabalho que a IA tem hoje (organizar o
+    // funil). Por isso este guarda foi REMOVIDO daqui — ele continua valendo, sem
+    // mudança, para `inbound-turn.ts` e `followup-turn.ts` (que TÊM `send_message`
+    // e por isso não podem falar por cima de quem assumiu).
 
     // A DECLARAÇÃO É LIDA ANTES DA CONFIG, e a ordem é o conserto.
     //
@@ -593,8 +574,12 @@ export async function apurarComRetorno(
  * (`stage_changed`, `followup_scheduled`); uma segunda linha dizendo "o Operador
  * trabalhou" é exatamente o ruído que enterra a linha que importa.
  *
- * **Central, mesmo critério, MENOS o handoff.** A Central é para o que ninguém
- * está olhando.
+ * **Central, mesmo critério.** Até 2026-09-18 este era "mesmo critério, MENOS
+ * o handoff" — a ideia era que quem tinha assumido a conversa já estava
+ * olhando, e um segundo aviso seria redundante. Isso mudou: o Operador roda
+ * (e pode deixar promessa sem dono) mesmo com humano na conversa, e nada aqui
+ * sabe se É o mesmo humano que vai notar — melhor aviso redundante do que
+ * promessa que ninguém assume.
  *
  * Tudo best-effort: o registro não derruba o job que ele descreve. Mas o
  * silêncio também não serve — log de worker em VPS não é superfície de nada, e
@@ -680,8 +665,6 @@ async function registrarDesfecho(
       error: (err instanceof Error ? err.message : String(err)).slice(0, 120),
     });
   }
-
-  if ('porque' in desfecho && desfecho.porque === 'handoff_humano') return;
 
   try {
     await insertInboxItem(
