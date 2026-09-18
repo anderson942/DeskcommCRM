@@ -7,6 +7,20 @@ export interface AgentOperationContext {
   versionId: string;
   revision: string;
 }
+
+/**
+ * Modos cujo turno chega até este boundary e precisa gravar efeito de
+ * verdade no CRM. `assisted` nunca alcança aqui — o rascunho tem ramo
+ * próprio em `createInboundTurnHandler` que devolve antes de qualquer efeito
+ * de serviço. `operator_only` chega pelo MESMO caminho que `automatic`
+ * (mesmo `executarTurnoDoAgente`), só sem `send_message` — por isso hardcode
+ * em `=== "automatic"` derrubava toda gravação do Operador com
+ * `StaleServiceBoundaryError`, mesmo turno certo, revisão certa, achado em
+ * produção (2026-09-18): o Conferidor de Funil rodava o turno inteiro e
+ * nunca conseguia salvar a etapa que decidiu mover.
+ */
+const MODOS_QUE_CHEGAM_NESTE_BOUNDARY = new Set(["automatic", "operator_only"]);
+
 function assert(
   row:
     | {
@@ -24,7 +38,7 @@ function assert(
     !row ||
     row.published_version_id !== c.versionId ||
     String(row.operation_revision) !== c.revision ||
-    row.operation_mode !== "automatic" ||
+    !MODOS_QUE_CHEGAM_NESTE_BOUNDARY.has(row.operation_mode) ||
     row.paused_at ||
     row.archived_at
   )
