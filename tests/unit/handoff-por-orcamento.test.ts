@@ -315,7 +315,15 @@ function chamadasDoNucleo(texto: string) {
 
 describe("o call site — AST separa prévia sem job do turno operacional escoltado", () => {
   const fonteInbound = readFileSync(INBOUND, "utf8");
-  const ESCOLTADO = "() => executarTurnoDoAgente(deps, job, pool, ctx, input),";
+  // Multilinha desde a 0273 (achado do incidente de 2026-09-18): o 7º
+  // argumento (`aoResolverModoDeOperacao`) é o único jeito de o modo do
+  // agente atravessar a fronteira do catch de orçamento — ver o comentário
+  // no call site de verdade.
+  const ESCOLTADO =
+    "() =>\n" +
+    "      executarTurnoDoAgente(deps, job, pool, ctx, input, undefined, (modo) => {\n" +
+    "        modoDeOperacaoConhecido = modo;\n" +
+    "      }),";
 
   it("há uma única entrada operacional escoltada e uma prévia explicitamente sem job", () => {
     const calls = chamadasDoNucleo(fonteInbound);

@@ -1558,6 +1558,15 @@ export async function runAgentTurn(
     tenant_id: job.organization_id,
     lead_id: leadIdDoJob,
   });
+  // O modo só é conhecido DEPOIS que `executarTurnoDoAgente` resolve o
+  // agente — mas `avisarLead` (abaixo) pode disparar antes disso ("quando o
+  // teto estoura antes da primeira chamada, não houve agente resolvido")
+  // ou depois. `aoResolverModoDeOperacao` é o único jeito de o modo
+  // atravessar essa fronteira sem duplicar a resolução do agente aqui.
+  // Sem isso, o mesmo vazamento medido em produção (2026-09-18) valeria
+  // também pro caminho de orçamento estourado: operator_only nunca deveria
+  // avisar o lead, nem "chegou seu turno acabou o orçamento".
+  let modoDeOperacaoConhecido: string | null | undefined;
   await comHandoffSeOrcamentoAcabar(
     {
       pool,
@@ -1571,31 +1580,36 @@ export async function runAgentTurn(
       // propósito — quando o teto estoura antes da primeira chamada, não houve
       // agente resolvido para creditar.
       avisarLead: () =>
-        avisarLeadLendoOContato(
-          pool,
-          {
-            tenantId: job.organization_id,
-            leadId: leadIdDoJob,
-            conversationId: input.conversationId,
-            channelSessionId: input.channelSessionId,
-            jobId: job.id,
-          },
-          {
-            motivo: 'orcamento_de_ia',
-            channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(
+        deveOmitirSendMessage(modoDeOperacaoConhecido)
+          ? Promise.resolve({ avisado: false, porque: 'agente_nao_fala_com_cliente' } as const)
+          : avisarLeadLendoOContato(
               pool,
+              {
+                tenantId: job.organization_id,
+                leadId: leadIdDoJob,
+                conversationId: input.conversationId,
+                channelSessionId: input.channelSessionId,
+                jobId: job.id,
+              },
+              {
+                motivo: 'orcamento_de_ia',
+                channel: (deps.channel ?? ((p: pg.Pool) => new WahaChannelAdapter(p, deps.crmCfg)))(
+                  pool,
+                ),
+                now: deps.clock?.() ?? new Date(),
+                log: logDaEscolta,
+                ...(deps.knobs.disclosureMode !== undefined
+                  ? { disclosureMode: deps.knobs.disclosureMode }
+                  : {}),
+                ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
+              },
             ),
-            now: deps.clock?.() ?? new Date(),
-            log: logDaEscolta,
-            ...(deps.knobs.disclosureMode !== undefined
-              ? { disclosureMode: deps.knobs.disclosureMode }
-              : {}),
-            ...(deps.sleep !== undefined ? { sleep: deps.sleep } : {}),
-          },
-        ),
       log: logDaEscolta,
     },
-    () => executarTurnoDoAgente(deps, job, pool, ctx, input),
+    () =>
+      executarTurnoDoAgente(deps, job, pool, ctx, input, undefined, (modo) => {
+        modoDeOperacaoConhecido = modo;
+      }),
   );
 }
 
@@ -1624,6 +1638,12 @@ async function executarTurnoDoAgente(
   ctx: { workerId: string },
   input: AgentTurnInput,
   preview?: TurnPreview,
+  // `comHandoffSeOrcamentoAcabar` (em `runAgentTurn`) decide se avisa o lead
+  // ANTES de este turno resolver o agente — o catch de `LlmBudgetExceededError`
+  // não tem `agentConfig` no escopo dele. Este callback é o único jeito de o
+  // modo de operação atravessar essa fronteira sem duplicar a resolução do
+  // agente. Ver o comentário no chamador (`runAgentTurn`).
+  aoResolverModoDeOperacao?: (modo: string | null | undefined) => void,
 ): Promise<void> {
   const liveJob = (): JobRow => {
     if (!job) throw new Error('preview_operational_job_forbidden');
@@ -1831,6 +1851,7 @@ async function executarTurnoDoAgente(
         inbound: liveJob().kind === 'inbound_turn',
       }, { log: runLog });
   const agentConfig = routed.config;
+  aoResolverModoDeOperacao?.(agentConfig?.operationMode);
   if (!preview && agentConfig?.operationMode === 'assisted' && job?.kind === 'inbound_turn') {
     const { generateReplyDraft } = await import('./reply-drafts');
     await generateReplyDraft(pool, deps, {

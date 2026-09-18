@@ -20,6 +20,12 @@
  * removida quando o canal não exige template (WAHA), nunca por causa do
  * modo. Um canal que exigisse template deixaria isso passar batido.
  *
+ * Um QUARTO ponto (pedido do Anderson pra fechar o gap conhecido, depois do
+ * teste controlado confirmar os três primeiros): o aviso de "orçamento de
+ * IA acabou" dispara de dentro de `runAgentTurn`, ANTES de o agente ser
+ * resolvido — corrigido levando o modo através dessa fronteira via um novo
+ * callback (`aoResolverModoDeOperacao`).
+ *
  * Cada teste aqui é um GUARDA DE CALL SITE (mesmo formato de
  * `modo-so-organizar-omite-envio.test.ts`): a regra pura já está coberta
  * (`deveOmitirSendMessage`); o que quebra em silêncio é um refactor que
@@ -82,5 +88,48 @@ describe("os três envios determinísticos respeitam deveOmitirSendMessage", () 
       antes.includes("deveOmitirSendMessage("),
       "send_template só sai por causa da capacidade do canal — um canal que EXIGE template deixaria operator_only com essa ferramenta disponível",
     ).toBe(true);
+  });
+
+  /**
+   * QUARTO ponto, achado revisando o pedido do Anderson pra fechar o gap
+   * conhecido: o aviso de "orçamento de IA acabou" (`avisarLeadLendoOContato`,
+   * em `runAgentTurn`) dispara ANTES de `executarTurnoDoAgente` resolver o
+   * agente — não tem `agentConfig` no escopo pra checar ali. O callback
+   * `aoResolverModoDeOperacao` é o que carrega o modo através dessa
+   * fronteira; sem ele, o mesmo vazamento valeria pro turno que fica sem
+   * orçamento no meio do caminho.
+   */
+  it("o aviso de orçamento estourado (runAgentTurn) também respeita o modo, via aoResolverModoDeOperacao", () => {
+    const iRunAgentTurn = fonte.indexOf("export async function runAgentTurn(");
+    expect(iRunAgentTurn, "não achei runAgentTurn").toBeGreaterThan(0);
+
+    const iAvisarLead = fonte.indexOf("avisarLead: () =>", iRunAgentTurn);
+    expect(iAvisarLead, "não achei o callback avisarLead dentro de runAgentTurn").toBeGreaterThan(
+      iRunAgentTurn,
+    );
+    const trechoAviso = fonte.slice(iAvisarLead, iAvisarLead + 200);
+    expect(
+      trechoAviso.includes("deveOmitirSendMessage(modoDeOperacaoConhecido)"),
+      "o aviso de orçamento não está mais condicionado ao modo conhecido via callback",
+    ).toBe(true);
+    expect(
+      trechoAviso.includes("avisado: false"),
+      "quando o agente não pode falar, o resultado tem de ser avisado:false — nunca avisado:true",
+    ).toBe(true);
+
+    // O callback precisa estar de fato ligado na chamada real do turno, não
+    // só declarado — senão `modoDeOperacaoConhecido` fica sempre undefined e
+    // `deveOmitirSendMessage` (que falha pro lado de MANTER a guarda ligada)
+    // mascara silenciosamente um callback nunca invocado.
+    const iChamadaReal = fonte.indexOf(
+      "executarTurnoDoAgente(deps, job, pool, ctx, input, undefined, (modo) => {",
+      iRunAgentTurn,
+    );
+    expect(
+      iChamadaReal,
+      "o call site operacional não está mais passando aoResolverModoDeOperacao",
+    ).toBeGreaterThan(iRunAgentTurn);
+    const trechoChamada = fonte.slice(iChamadaReal, iChamadaReal + 150);
+    expect(trechoChamada.includes("modoDeOperacaoConhecido = modo;")).toBe(true);
   });
 });
