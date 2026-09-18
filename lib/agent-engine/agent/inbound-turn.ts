@@ -1109,6 +1109,24 @@ export function deveOmitirSendMessage(operationMode: string | null | undefined):
   return operationMode === 'operator_only';
 }
 
+/**
+ * O gate de handoff humano (`isLeadInHandoff`) e o de elegibilidade
+ * (`decidirElegibilidadeDaConversa`) existem pra impedir o bot de falar com
+ * quem um humano já assumiu — certo pro modo automático, errado pro
+ * `operator_only`: ele não tem `send_message` (ver `deveOmitirSendMessage`),
+ * então "um humano está atendendo" não é motivo nenhum pra parar de
+ * organizar o funil — é justamente QUANDO mais importa organizar, porque é
+ * quando a negociação está acontecendo de verdade.
+ *
+ * Achado em produção (2026-09-18): os dois "Conferidor de Funil" publicados
+ * nunca rodaram um turno sequer num dia inteiro de conversa real — as
+ * vendedoras respondem manualmente, a conversa fica sempre silenciada pra
+ * IA, e as duas guardas bloqueavam ANTES de qualquer chamada de modelo.
+ */
+export function devePularGateDeHumano(operationMode: string | null | undefined): boolean {
+  return operationMode === 'operator_only';
+}
+
 async function insertCheckpoint(
   db: Queryable,
   input: { tenantId: string; leadId: string; jobId: string; content: CheckpointContent },
@@ -1656,10 +1674,20 @@ async function executarTurnoDoAgente(
   // Nunca lança e nunca vem vazio (ver `fuso-da-org.ts`).
   const fusoDaOrg = await fusoDaOrganizacao(pool, tenantId, runLog);
 
+  // Modo já conhecido ANTES do `routed`/`agentConfig` (que só nasce lá embaixo):
+  // `createInboundTurnHandler` já resolveu o agente e mandou em `input.resolvedAgent`
+  // pra todo job de `inbound_turn` real. Sem isso disponível (preview, ou um
+  // chamador que não pré-resolve), cai no comportamento de sempre — as duas
+  // guardas abaixo continuam valendo, é só o operator_only que não conhece ainda.
+  const operationModeConhecido = input.resolvedAgent?.config?.operationMode;
+  const pulaGateDeHumano = devePularGateDeHumano(operationModeConhecido);
+
   // F4-06 (acceptance 2): lead em handoff humano → NO-OP no INÍCIO do turno, antes de
   // qualquer chamada de modelo/CRM. O bot silenciou (bot_silenced_until='infinity', cache
   // do force_human do CRM) e só o humano/CRM libera — o agente nunca reassume (regra dura 2).
-  if (!preview && (await isLeadInHandoff(pool, tenantId, leadId))) {
+  // `operator_only` é isento (ver `devePularGateDeHumano`): esse modo não tem
+  // `send_message`, então "humano atendendo" não bloqueia — é quando mais importa.
+  if (!preview && !pulaGateDeHumano && (await isLeadInHandoff(pool, tenantId, leadId))) {
     runLog.info('turno pulado — lead em handoff humano (bot silenciado)', { kind: liveJob().kind });
     return;
   }
@@ -1679,7 +1707,11 @@ async function executarTurnoDoAgente(
         agora: clock(),
         ttlMs: deps.knobs.allowlistTtlMs ?? ALLOWLIST_TTL_MS_PADRAO,
       });
-      if (elegib !== null && !elegib.permite) {
+      // `operator_only` só é isento do bloqueio de HUMANO
+      // (`bloqueioPorAllowlist: false` — force_human/silenciada/de_humano), não
+      // do bloqueio de allowlist: contato não autorizado continua não
+      // autorizado nesse modo também, é uma guarda diferente da de handoff.
+      if (elegib !== null && !elegib.permite && !(pulaGateDeHumano && !elegib.bloqueioPorAllowlist)) {
         runLog.info('turno pulado — conversa não elegível para IA', {
           kind: liveJob().kind,
           motivo: elegib.motivo,

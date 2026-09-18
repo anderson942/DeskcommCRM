@@ -350,19 +350,24 @@ async function processEvent(
   // `force_human` / silêncio / dono humano bloqueiam em QUALQUER modo, e é o
   // TURNO quem garante isso — aqui a decisão só se antecipa para não enfileirar.
   //
-  // Repare no `!canAssist` do `if` abaixo: com agente assistido publicado no
-  // canal o gate é desligado INTEIRO nesta ponta, de propósito (o rascunho é o
-  // produto do modo assistido, barrar aqui o mataria). A frase que este
-  // comentário trazia — "o turno revalida" — era falsa justamente nesse caso: o
-  // ramo assistido de `createInboundTurnHandler` devolvia antes das guardas de
-  // `runAgentTurn`. As duas checagens agora vivem dentro daquele ramo
-  // (`inbound-turn.ts`, `operationMode === 'assisted'`), e é lá que a defesa em
-  // profundidade realmente acontece.
+  // Repare no `!canAssist` do `if` abaixo: com agente assistido OU
+  // "só organizar" (`operator_only`, achado 2026-09-18) publicado no canal o
+  // gate é desligado INTEIRO nesta ponta, de propósito. Pro assistido: o
+  // rascunho é o produto do modo, barrar aqui o mataria. Pro operator_only:
+  // ele nunca tem `send_message` (`deveOmitirSendMessage`), então "humano
+  // atendendo" não é motivo pra parar de organizar o funil — é quando mais
+  // importa. A frase que este comentário trazia — "o turno revalida" — era
+  // falsa justamente nesse caso: o ramo assistido de `createInboundTurnHandler`
+  // devolvia antes das guardas de `runAgentTurn`. As checagens agora vivem
+  // dentro de cada ramo (`inbound-turn.ts`, `operationMode === 'assisted'` e
+  // `devePularGateDeHumano`), e é lá que a defesa em profundidade acontece —
+  // no caminho do operator_only, com a distinção fina entre bloqueio de
+  // HUMANO (isento) e bloqueio de ALLOWLIST (continua valendo).
   // This is a capability check, never a selection by priority. The canonical
   // router chooses once in the worker, then automatic eligibility is rechecked.
   const {rows:assistance}=await pool.query<{available:boolean}>(`select exists(
     select 1 from ai_agents a join ai_agent_versions v on v.organization_id=a.organization_id and v.id=a.published_version_id
-    where a.organization_id=$1 and a.archived_at is null and a.operation_mode='assisted' and v.status='published'
+    where a.organization_id=$1 and a.archived_at is null and a.operation_mode in('assisted','operator_only') and v.status='published'
     and(v.channel_session_id=$2 or exists(select 1 from ai_routers r where r.organization_id=a.organization_id and r.channel_session_id=$2 and r.is_active and(r.fallback_agent_id=a.id or exists(select 1 from ai_router_members m where m.organization_id=r.organization_id and m.router_id=r.id and m.agent_id=a.id))))) as available`,[event.organization_id,p.channel_session_id]);
   const canAssist=assistance[0]?.available===true;
   try {
