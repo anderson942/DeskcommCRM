@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 /**
@@ -85,6 +85,8 @@ function montar(itens: Produto[]) {
 const semNbsp = (s: string) => s.replace(/[\u00A0\u202F]/g, " ");
 
 function precoNaTela(codigo: string): string {
+  const grupo = screen.getByTestId(`abrir-grupo-${codigo}`);
+  if (grupo.getAttribute("aria-expanded") === "false") fireEvent.click(grupo);
   const linha = screen.getByTestId(`produto-${codigo}`);
   const preco = linha.querySelector(".tabular-nums");
   return semNbsp(preco?.textContent ?? "");

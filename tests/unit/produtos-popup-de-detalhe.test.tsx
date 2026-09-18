@@ -6,6 +6,11 @@ import { describe, expect, it, vi } from "vitest";
  * categoria, preço de/por, estoque, origem, link da loja) em vez de
  * espalhar mais colunas/ícones na tabela — pedido do Anderson (2026-09-16),
  * depois de sincronizar categoria/marca da Shoppub.
+ *
+ * Desde a sanfona de variações (0271) + "sempre sanfona" (2026-09-18), todo
+ * produto — mesmo sem irmão de tamanho — mora dentro de um grupo que abre
+ * antes de mostrar o botão de detalhe; por isso cada teste aqui expande o
+ * grupo (`abrir-grupo-<chave>`) antes de clicar no produto.
  */
 
 vi.mock("@/lib/api/client", () => ({
@@ -50,10 +55,16 @@ function montar(itens: Produto[]) {
   );
 }
 
+/** Abre a sanfona do grupo (sempre fechada por padrão) antes de poder clicar num produto dentro dela. */
+function abrirGrupo(chave: string) {
+  fireEvent.click(screen.getByTestId(`abrir-grupo-${chave}`));
+}
+
 describe("popup de detalhe do produto", () => {
   it("clicar no nome abre o popup com marca, categoria, estoque, origem e link", async () => {
     montar([produto()]);
 
+    abrirGrupo("BONE-RL");
     fireEvent.click(screen.getByTestId("abrir-detalhe-BONE-RL-01"));
 
     const dialog = await screen.findByRole("dialog");
@@ -80,6 +91,7 @@ describe("popup de detalhe do produto", () => {
       "Calça VersatiOld Alfaiataria Premium Slim Cinza 38 40 42 44 46 48 50 - 50";
     montar([produto({ nome: nomeLongo })]);
 
+    abrirGrupo("BONE-RL");
     fireEvent.click(screen.getByTestId("abrir-detalhe-BONE-RL-01"));
     const dialog = await screen.findByRole("dialog");
 
@@ -96,6 +108,7 @@ describe("popup de detalhe do produto", () => {
   it("produto sem marca/categoria/link não mostra essas linhas nem quebra", async () => {
     montar([produto({ marca: null, categoria: null, url_produto: null })]);
 
+    abrirGrupo("BONE-RL");
     fireEvent.click(screen.getByTestId("abrir-detalhe-BONE-RL-01"));
 
     const dialog = await screen.findByRole("dialog");
@@ -106,6 +119,7 @@ describe("popup de detalhe do produto", () => {
 
   it("produto inativo mostra o selo, produto ativo não mostra nada extra", async () => {
     montar([produto({ ativo: false })]);
+    abrirGrupo("BONE-RL");
     fireEvent.click(screen.getByTestId("abrir-detalhe-BONE-RL-01"));
     expect(await screen.findByText("Inativo")).toBeInTheDocument();
   });
@@ -113,11 +127,13 @@ describe("popup de detalhe do produto", () => {
   it("fechar o popup e clicar noutro produto troca o conteúdo, não empilha", async () => {
     montar([produto(), produto({ id: "2", codigo: "TENIS-40", nome: "Tênis 40", marca: "Nike" })]);
 
+    abrirGrupo("BONE-RL");
     fireEvent.click(screen.getByTestId("abrir-detalhe-BONE-RL-01"));
     expect(await screen.findByText("Ralph Lauren")).toBeInTheDocument();
 
     // Fecha (Escape é o caminho padrão do Radix Dialog) e abre o outro.
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    abrirGrupo("TENIS");
     fireEvent.click(screen.getByTestId("abrir-detalhe-TENIS-40"));
 
     const dialog = await screen.findByRole("dialog");

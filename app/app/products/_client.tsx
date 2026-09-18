@@ -520,25 +520,14 @@ export function ProdutosClient({
           className={`divide-y rounded-lg border ${carregando ? "opacity-60" : ""}`}
           data-testid="lista-produtos"
         >
-          {grupos.map((g) =>
-            g.variacoes.length === 1 ? (
-              // `rotulo=g.titulo`, não `p.nome` cru: um produto que ficou
-              // sozinho (sem irmão de tamanho reconhecido) ainda pode ter a
-              // cauda de tamanho no nome ("Tamanho:44") — mostrar limpo
-              // igual ao título de uma sanfona de verdade, não a bagunça.
-              <ProdutoLinha
-                key={g.chave}
-                p={g.variacoes[0]!}
-                rotulo={g.titulo}
-                podeEditar={podeEditar}
-                t={t}
-                onAbrirDetalhe={setDetalhe}
-                onAlternarAtivo={(p) => void alternarAtivo(p)}
-              />
-            ) : (
-              // Sanfona de verdade: título limpo fechado por padrão — clicar
-              // expande as variações de tamanho, cada uma abrindo o MESMO
-              // popup de detalhe que uma linha solta já abre.
+          {grupos.map((g) => {
+            // Sanfona SEMPRE, mesmo com 1 variação só — pedido do Anderson
+            // (2026-09-18): filtrar por "Em estoque" pode reduzir uma
+            // família de 6 tamanhos a 1 só com estoque>1, e a linha virar
+            // singela escondia que aquilo é (ou pode ser) uma família de
+            // produto, não um item avulso. O "+"/contagem deixa isso visível
+            // mesmo quando só sobra 1 dentro do filtro atual.
+            return (
               <li key={g.chave} data-testid={`grupo-${g.chave}`}>
                 <button
                   type="button"
@@ -556,7 +545,7 @@ export function ProdutosClient({
                     {g.titulo}
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
-                    {g.variacoes.length} {t("variações")}
+                    {g.variacoes.length} {t(g.variacoes.length === 1 ? "variação" : "variações")}
                   </span>
                 </button>
                 {gruposAbertos.has(g.chave) ? (
@@ -576,8 +565,8 @@ export function ProdutosClient({
                   </ul>
                 ) : null}
               </li>
-            ),
-          )}
+            );
+          })}
         </ul>
       )}
 

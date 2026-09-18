@@ -9,13 +9,19 @@ import { describe, expect, it, vi } from "vitest";
  * ... 38 40 - 40", "Calça ... 38 40 42 - 42"…) apareciam como uma linha por
  * SKU. Agora aparecem como UMA linha com o título limpo, que expande pra
  * mostrar cada variação com seu preço — clicando numa variação abre o MESMO
- * popup de detalhe que uma linha solta (produto sem irmão de tamanho) já
- * abre.
+ * popup de detalhe que uma linha solta já abria.
+ *
+ * A sanfona aparece SEMPRE, mesmo com 1 variação só dentro (2026-09-18): o
+ * filtro "Em estoque" pode reduzir uma família de 6 tamanhos a 1 só com
+ * estoque>1, e uma linha "solta" nesse caso escondia que aquilo é (ou pode
+ * ser) uma família de produto — o "+"/contagem preserva essa pista mesmo
+ * quando só sobra 1 dentro do filtro atual, ou quando o produto nunca teve
+ * irmão de tamanho nenhum.
  *
  * O agrupamento em si (chave, título, ordem) já tem suíte própria em
  * `lib/catalogo/agrupamento.test.ts` — este arquivo cobre só a UI: fechada
  * por padrão, expande ao clicar, cada variação com preço e abrindo o
- * detalhe certo, produto sem irmão continua uma linha solta sem acordeão.
+ * detalhe certo.
  */
 
 vi.mock("@/lib/api/client", () => ({
@@ -147,11 +153,30 @@ describe("sanfona de variações na lista de produtos", () => {
     expect(dialog).toHaveTextContent("37 em estoque");
   });
 
-  it("produto sem irmão de tamanho continua uma linha solta, sem chrome de acordeão", () => {
+  it("produto sem irmão de tamanho ainda vira sanfona (de 1 variação), não linha solta", () => {
     montar([produto({ id: "1", codigo: "BONE-RL-01", nome: "Boné Polo RL Classic Chumbo" })]);
 
+    const abrir = screen.getByTestId("abrir-grupo-BONE-RL");
+    expect(abrir).toHaveTextContent("1 variação");
+    expect(screen.queryByTestId("produto-BONE-RL-01")).not.toBeInTheDocument();
+
+    fireEvent.click(abrir);
     expect(screen.getByTestId("produto-BONE-RL-01")).toBeInTheDocument();
-    expect(screen.queryByTestId(/^abrir-grupo-/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * O CASO REAL relatado pelo Anderson (2026-09-18, print da tela com o
+   * filtro "Em estoque" ligado): uma família de 6 tamanhos onde só 1 tem
+   * estoque>1 não pode "perder" a sanfona — senão parece que o produto
+   * "escapou" do pai, quando na verdade é só o filtro reduzindo o grupo.
+   */
+  it("grupo reduzido a 1 variação pelo filtro de estoque continua sanfona, não linha solta", () => {
+    montar([
+      produto({ id: "1", codigo: "OFIC00000064-40", nome: "Bermuda 247 Moletom Oficina Reserva Azul Marinho 38 40 - 40", quantidade: 2 }),
+    ]);
+
+    expect(screen.getByTestId("abrir-grupo-OFIC64")).toHaveTextContent("Bermuda 247 Moletom Oficina Reserva Azul Marinho");
+    expect(screen.getByTestId("abrir-grupo-OFIC64")).toHaveTextContent("1 variação");
   });
 
   it("com permissão de editar, desativar/reativar continua por VARIAÇÃO dentro da sanfona aberta", () => {
