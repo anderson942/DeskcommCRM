@@ -177,6 +177,11 @@ export const AUDIT_ACTIONS = [
   "ai_agent.version_updated",
   "ai_agent.tested",
   "ai_agent.reconciled",
+  // Botão "Reavaliar com IA" (0272) — reprocessa conversas passadas de um
+  // agente operator_only, reemitindo o despacho pra última mensagem inbound
+  // de cada uma. Auditável porque gasta IA em lote e pode mexer no funil de
+  // várias conversas de uma vez.
+  "ai_agent.reavaliado",
   "ai_reply.generated",
   "ai_reply.approved",
   "ai_reply.rejected",

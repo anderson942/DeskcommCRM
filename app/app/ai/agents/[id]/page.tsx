@@ -10,6 +10,7 @@ import type { CredentialRow } from "@/hooks/ai/useCredentials";
 
 import { LegacyRecovery } from "./_components/LegacyRecovery";
 import { AgentOperation } from "./_components/AgentOperation";
+import { ReavaliarHistorico } from "./_components/ReavaliarHistorico";
 import type { MaterialDoAcervo } from "./_components/BasesDoAgente";
 import { AgentTabs } from "./_components/AgentTabs";
 import type { FunilDaResposta } from "@/hooks/pipelines/usePipelines";
@@ -155,6 +156,7 @@ export default async function AgentEditorPage({ params }: { params: Promise<{ id
   return (
     <div className="flex h-full flex-col gap-6 p-6">
       <AgentOperation agent={agent} readOnly={readOnly} />
+      <ReavaliarHistorico agent={agent} readOnly={readOnly} />
       {(agent.kind ?? "rag_bot") !== "mcp_agent" && !agent.published_version_id && (
         <LegacyRecovery
           agent={agent}
