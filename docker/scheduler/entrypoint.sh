@@ -84,30 +84,30 @@ CRONS="
 */15 * * * *|60|api/v1/cron/risk-watcher
 # ESTOQUE DA TINY. Decisão do Anderson (2026-09-15), SUBSTITUÍDA um dia
 # depois (2026-09-16) pela Shoppub — ver comentário logo abaixo. A linha
-# fica: a integração está `disconnected` no banco, e a query da rota
-# (`.eq("status","healthy")`) devolve zero linhas — no-op barato, reconectável
+# fica: a integração está \"disconnected\" no banco, e a query da rota
+# (.eq(\"status\",\"healthy\")) devolve zero linhas — no-op barato, reconectável
 # sem mexer em código se um dia fizer sentido de novo.
 */5 * * * *|180|api/v1/cron/tiny-stock-sync
 # CATÁLOGO DA SHOPPUB — rede de segurança, não a fonte principal de frescor.
-# Quem mantém o preço/estoque em dia é o WEBHOOK (`/api/v1/webhooks/shoppub/
-# [token]`, dispara na hora que muda); este cron cobre a carga inicial (produto
+# Quem mantém o preço/estoque em dia é o WEBHOOK (\"/api/v1/webhooks/shoppub/
+# [token]\", dispara na hora que muda); este cron cobre a carga inicial (produto
 # que já existia antes de conectar nunca dispara webhook) e reconcilia o que um
 # webhook falho (5 tentativas em 15min, documentado pela Shoppub) deixou pra
-# trás. Timeout mais curto que o da Tiny porque `GET /produtos/` já devolve
+# trás. Timeout mais curto que o da Tiny porque \"GET /produtos/\" já devolve
 # preço e estoque no mesmo request — sem a chamada extra por produto que a
 # Tiny exigia.
 */5 * * * *|90|api/v1/cron/shoppub-backfill
-# CLIENTES DA SHOPPUB — alimenta "Pedidos recentes" no painel do contato
+# CLIENTES DA SHOPPUB — alimenta \"Pedidos recentes\" no painel do contato
 # (Inbox), pedido do Anderson (2026-09-17). Sem webhook de cliente
 # documentado, então é polling puro, como a carga do catálogo. Cadência
 # DIFERENTE (7min, não 5) de propósito: as duas rodam contra a MESMA conta
 # Shoppub (rate limit é por CONTA, não por rota), então cravar as duas no
-# mesmo `*/5` as faria brigar pelo teto de 120 req/min toda vez que caem no
+# mesmo \"*/5\" as faria brigar pelo teto de 120 req/min toda vez que caem no
 # mesmo minuto — 7 é primo com 5, então as duas raramente coincidem.
 */7 * * * *|90|api/v1/cron/shoppub-customer-sync
-# PEDIDOS DA SHOPPUB — alimenta a MESMA seção "Pedidos recentes" que os
-# clientes, mas escreve em `orders` (não `commerce_customers`) e casa por
-# telefone com `contacts`, não por CPF. Cadência PRÓPRIA (11min): terceira
+# PEDIDOS DA SHOPPUB — alimenta a MESMA seção \"Pedidos recentes\" que os
+# clientes, mas escreve em \"orders\" (não \"commerce_customers\") e casa por
+# telefone com \"contacts\", não por CPF. Cadência PRÓPRIA (11min): terceira
 # rodada contra a MESMA conta Shoppub do catálogo (5min) e dos clientes
 # (7min) — 11 é primo com os dois, então as três raramente colidem no mesmo
 # minuto e disputam o teto de 120 req/min.
