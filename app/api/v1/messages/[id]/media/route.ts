@@ -1,13 +1,14 @@
 // app/api/v1/messages/[id]/media/route.ts
 /**
  * GET /api/v1/messages/[id]/media — acesso autenticado à mídia da mensagem.
- * Persistida → 302 pra signed URL (TTL 1h) do bucket whatsapp-media.
+ * Persistida → 307 pra signed URL (TTL 1h) do bucket whatsapp-media, com
+ * Cache-Control pro browser não refazer a rota a cada render.
  * Ainda não persistida (janela até o worker rodar) → proxy dos bytes do WAHA.
  * A URL desta rota é usada diretamente como src de <img>/<video>/<audio>
  * (cookie de sessão vai junto por ser same-origin; RLS decide o acesso).
  */
 import { randomUUID } from "node:crypto";
-import { NextResponse, type NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 
 import { fail } from "@/lib/api/wrappers";
 import { loadAuthUser, resolveActiveOrg } from "@/lib/auth/server";
@@ -26,6 +27,21 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 const SIGNED_URL_TTL_S = 3600;
+
+/**
+ * Quanto o browser guarda o próprio redirect — mesmo padrão e mesmo motivo de
+ * `contacts/[id]/avatar/route.ts`: sem isto, toda vez que uma mensagem com
+ * mídia aparece na tela (abrir a conversa, rolar, o Realtime re-renderizar) a
+ * rota inteira roda de novo — sessão, organização ativa, SELECT em `messages`
+ * e um `createSignedUrl` NOVO — e o browser, sem instrução de cache, refaz o
+ * download do mesmo arquivo do Storage outra vez. Medido em produção
+ * (2026-09-19): 378 arquivos somando 157 MB armazenados geraram 13,4 GB de
+ * egress em poucos dias — o mesmo arquivo sendo baixado dezenas de vezes.
+ *
+ * Precisa ser MENOR que SIGNED_URL_TTL_S, senão o browser reusa um redirect
+ * apontando pra uma assinatura já vencida e a mídia some.
+ */
+const BROWSER_CACHE_SECONDS = 3300;
 
 interface RouteCtx {
   params: Promise<{ id: string }>;
@@ -71,9 +87,17 @@ export async function GET(_req: NextRequest, ctx: RouteCtx): Promise<Response> {
       .from("whatsapp-media")
       .createSignedUrl(msg.media_storage_path, SIGNED_URL_TTL_S);
     if (!signErr && signed?.signedUrl) {
-      const response = NextResponse.redirect(signed.signedUrl, 302);
-      response.headers.set("X-Request-Id", requestId);
-      return response;
+      // Response.redirect()/NextResponse.redirect() devolvem headers
+      // imutáveis pra Cache-Control — por isso o 307 é montado à mão (mesmo
+      // padrão do avatar route).
+      return new Response(null, {
+        status: 307,
+        headers: {
+          Location: signed.signedUrl,
+          "Cache-Control": `private, max-age=${BROWSER_CACHE_SECONDS}`,
+          "X-Request-Id": requestId,
+        },
+      });
     }
     if (signErr) {
       console.error("[messages.media] createSignedUrl failed", signErr.message);
