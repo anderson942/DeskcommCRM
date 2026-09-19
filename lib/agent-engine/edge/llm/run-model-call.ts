@@ -475,6 +475,18 @@ export async function runModelCall(db: pg.Pool, cfg: LlmEdgeConfig, input: RunMo
   };
   const cost = costCents(model, usage);
 
+  // ─── DIAGNÓSTICO TEMPORÁRIO (2026-09-19) — remover depois de confirmar a
+  // causa do cache zerado em claude-haiku-4-5 vs claude-sonnet-5. Loga o
+  // usage CRU do SDK (não só os dois campos que extraímos) pra ver se o
+  // provider devolve inputTokenDetails vazio pro Haiku ou se a extração é
+  // que está errada.
+  deps.log?.info('DIAG cache: usage cru do SDK', {
+    model,
+    provider: config.provider,
+    raw_usage: result.usage,
+    provider_metadata_anthropic: result.providerMetadata?.['anthropic'] ?? null,
+  });
+
   const { rows } = await db.query<{ id: string }>(
     `insert into llm_calls
        (organization_id, contact_id, job_id, variant_id, purpose, provider, model,
