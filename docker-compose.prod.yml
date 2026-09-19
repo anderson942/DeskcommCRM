@@ -56,18 +56,29 @@ services:
 
   # Worker 24/7 do agent-engine (fusão Vendaval) — cérebro do agente SDR.
   worker:
-    # Teto de memória — 230 MiB de pico MEDIDO nesta VPS.
+    # Teto de memória — revisado em 2026-09-19. O valor original (512m) vinha de
+    # um pico de 230 MiB medido ANTES de: Sonnet entrar em uso (contexto maior,
+    # ~10x o footprint por chamada do Haiku), o Reavaliar em lote (várias
+    # conversas processadas em sequência) e turnos com múltiplos passos de
+    # ferramenta. Medido em produção nesta data: o processo batia
+    # "FATAL ERROR: Reached heap limit Allocation failed" a cada 5-10 minutos —
+    # inclusive OCIOSO, sem lote nenhum rodando — sinal de que o teto antigo já
+    # não cabia nem a operação normal do dia, não só picos de lote. Dobrado
+    # pra 1024m com essa carga mais pesada em mente; a VPS tem 3,8 GB e os
+    # quatro serviços com teto (app 768m + worker 1024m + waha 1280m +
+    # wacalls 256m = 3328m) ainda deixam margem pros sem teto (redis/srh/
+    # scheduler/caddy, historicamente leves).
     #
-    # Sem ele o contêiner é ilimitado, e numa VPS de 3,8 GB isso não é teoria:
-    # um contêiner ALHEIO (agente da hospedagem, fora deste compose) registrou
-    # pico de 3.068 MiB no mesmo host. Quando a RAM acaba, o OOM killer escolhe
-    # a vítima por PONTUAÇÃO — quem cresceu mais rápido —, não por importância:
-    # o que morre pode ser o CRM.
+    # Sem NENHUM teto o contêiner é ilimitado, e numa VPS de 3,8 GB isso não é
+    # teoria: um contêiner ALHEIO (agente da hospedagem, fora deste compose)
+    # registrou pico de 3.068 MiB no mesmo host. Quando a RAM acaba, o OOM
+    # killer escolhe a vítima por PONTUAÇÃO — quem cresceu mais rápido —, não
+    # por importância: o que morre pode ser o CRM.
     #
     # O teto não impede o pico legítimo; impede que UM serviço leve a máquina
     # inteira. Estourá-lo mata só quem estourou, e o `restart: unless-stopped`
     # o traz de volta — falha isolada em vez de queda geral.
-    mem_limit: 512m
+    mem_limit: 1024m
     # Imagem publicada — e não mais `build:` sozinho. O motivo é o modo de falha
     # que isso escondia: serviço build-only é PULADO por `docker compose pull`
     # ("Skipped - No image to be pulled") e imune a `up -d` sem `--build`. Ele era
