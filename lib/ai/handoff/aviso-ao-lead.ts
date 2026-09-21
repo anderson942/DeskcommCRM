@@ -62,6 +62,78 @@ export interface AvisoDoCrmInput {
 }
 
 /**
+ * Mesma regra pura de `deveOmitirSendMessage`
+ * (`lib/agent-engine/agent/inbound-turn.ts`) — reescrita aqui, não
+ * importada, de propósito: aquele arquivo carrega `pg.Pool` e o resto do
+ * motor de conversa, e este módulo roda dentro de rota Next / fire-and-
+ * forget do CRM (ver docstring do arquivo — "abrir um pool dentro de uma
+ * rota Next... seria pagar caro"). Se a regra do lado do motor mudar, esta
+ * cópia precisa mudar junto — os dois são guardados por teste de call site.
+ */
+function operadorNaoFala(operationMode: string | null | undefined): boolean {
+  return operationMode === "operator_only";
+}
+
+/**
+ * INCIDENTE (2026-09-21): este caminho mandava o aviso de escalação
+ * incondicionalmente, sem saber que o agente da organização podia estar em
+ * `operator_only` (sem `send_message`, por ausência de ferramenta — a mesma
+ * separação que `deveOmitirSendMessage` protege do lado do motor de
+ * conversa). O comentário no topo deste arquivo já dizia "dois motores de
+ * passagem para humano, e eles não se falam" — e o motor do CRM nunca
+ * ganhou a checagem que o motor de conversa ganhou no incidente de
+ * mensagem real (setembro/2026). Medido em produção: `ai.sentiment_alert` →
+ * `ai-handoff-from-sentiment.handler.ts` → `triggerHandoff` →
+ * `avisarLeadDoCrm` mandou "Esse caso é melhor resolvido por uma pessoa..."
+ * pra um cliente real, com os dois agentes da org publicados em
+ * `operator_only`.
+ *
+ * Sem `agent_id` específico neste escopo (o gatilho é por sentimento/tool,
+ * não por turno de um agente): olha o agente ATIVO da conversa
+ * (`conversations.active_ai_agent_id`) quando existe; sem ele, cai pro modo
+ * mais conservador — SÓ envia se existir pelo menos um agente publicado da
+ * org que NÃO seja `operator_only`. Na dúvida, não manda: é o mesmo lado da
+ * assimetria que o resto desta doutrina escolhe sempre.
+ */
+async function devePularEnvioDoAviso(
+  admin: SupabaseClient,
+  organizationId: string,
+  conversationId: string,
+): Promise<boolean> {
+  const { data: conv } = await admin
+    .from("conversations")
+    .select("active_ai_agent_id")
+    .eq("id", conversationId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  const activeAgentId = (conv as { active_ai_agent_id?: string | null } | null)?.active_ai_agent_id;
+
+  if (activeAgentId) {
+    const { data: agente } = await admin
+      .from("ai_agents")
+      .select("operation_mode")
+      .eq("organization_id", organizationId)
+      .eq("id", activeAgentId)
+      .maybeSingle();
+    if (agente) return operadorNaoFala((agente as { operation_mode: string }).operation_mode);
+  }
+
+  // Sem agente ativo resolvível: só manda se existir ALGUM agente publicado
+  // da org que fale de verdade. Nenhum agente, ou todos operator_only →
+  // pula (fail-closed do lado que importa: nunca mandar por engano).
+  const { data: publicados } = await admin
+    .from("ai_agents")
+    .select("operation_mode")
+    .eq("organization_id", organizationId)
+    .not("published_version_id", "is", null)
+    .is("archived_at", null);
+  const algumFala = (publicados ?? []).some(
+    (a) => !operadorNaoFala((a as { operation_mode: string }).operation_mode),
+  );
+  return !algumFala;
+}
+
+/**
  * Avisa o lead. NUNCA lança: o orquestrador inteiro é fire-and-forget por
  * contrato ("nunca propaga exceção pro caller"), e um erro aqui não pode impedir
  * a passagem que ele antecede.
@@ -71,6 +143,9 @@ export async function avisarLeadDoCrm(
   input: AvisoDoCrmInput,
 ): Promise<{ avisado: boolean; porque?: string }> {
   try {
+    if (await devePularEnvioDoAviso(admin, input.organizationId, input.conversationId)) {
+      return { avisado: false, porque: "agente_nao_fala_com_cliente" };
+    }
     const body = textoDoAviso(
       motivoDoAviso(input.reason),
       await quemPodeAssumir(admin, input.organizationId),
