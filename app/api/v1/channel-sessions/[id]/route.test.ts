@@ -290,7 +290,7 @@ describe("DELETE /api/v1/channel-sessions/[id]", () => {
   it("canal COM CONVERSAS → arquiva, NÃO apaga, e emite channel.archived", async () => {
     authOk();
     const db = makeDb({
-      rows: { conversations: [{ id: "c1", organization_id: ORG, channel_session_id: CANAL }] },
+      rows: { conversations: [{ id: "c1", organization_id: ORG, channel_session_id: CANAL, status: "open" }] },
     });
     wahaOk(db);
     const { DELETE } = await import("./route");
@@ -298,10 +298,33 @@ describe("DELETE /api/v1/channel-sessions/[id]", () => {
 
     expect(res.status).toBe(200);
     expect((await res.json()).data.archived).toBe(true);
-    expect(db.escritas.map((e) => e.tipo)).toEqual(["update"]);
+    expect(db.escritas.map((e) => e.tipo)).toEqual(["update", "update"]);
     expect(db.escritas[0]?.patch).toMatchObject({ status: "STOPPED" });
     expect(db.escritas[0]?.patch?.archived_at).toEqual(expect.any(String));
+    // As conversas do canal saem do Inbox ativo junto — pedido do Anderson
+    // (2026-09-22): "só não ver mais essas conversas no Inbox".
+    expect(db.escritas[1]).toMatchObject({
+      tipo: "update",
+      table: "conversations",
+      patch: { status: "archived" },
+    });
+    expect(db.escritas[1]?.filtros).toContainEqual(["organization_id", ORG]);
+    expect(db.escritas[1]?.filtros).toContainEqual(["channel_session_id", CANAL]);
     expect(audit).toHaveBeenCalledWith(expect.objectContaining({ action: "channel.archived" }));
+  });
+
+  it("canal SEM conversa (só roteador/ajuste pendurado) → arquiva sem tocar em `conversations`", async () => {
+    authOk();
+    const db = makeDb({
+      rows: { ai_routers: [{ id: "r1", organization_id: ORG, channel_session_id: CANAL }] },
+    });
+    wahaOk(db);
+    const { DELETE } = await import("./route");
+    const res = await DELETE(reqDelete(), ctx());
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.archived).toBe(true);
+    expect(db.escritas.map((e) => e.table)).toEqual(["channel_sessions"]);
   });
 
   /**

@@ -455,14 +455,14 @@ export function frasesDoImpacto(
     return [t("Este número não tem conversa, mensagem nem configuração ligada a ele.")];
   }
 
-  const noInbox = enumerar(
+  const guardado = enumerar(
     [
       contar(impact.history.conversations, "conversa", "conversas", t),
       contar(impact.history.messages, "mensagem", "mensagens", t),
-      // Registro de ligação entra na MESMA frase de "continua no inbox": para
-      // quem opera, conversa e chamada são o mesmo histórico com o cliente. A
-      // contagem nem existia, e o diálogo mostrava zeros enquanto o histórico
-      // de voz sumia por cascade.
+      // Registro de ligação entra na MESMA frase: para quem opera, conversa e
+      // chamada são o mesmo histórico com o cliente. A contagem nem existia,
+      // e o diálogo mostrava zeros enquanto o histórico de voz sumia por
+      // cascade.
       contar(impact.history.voice_calls, "chamada de voz", "chamadas de voz", t),
     ],
     t,
@@ -482,7 +482,10 @@ export function frasesDoImpacto(
   );
 
   const frases: string[] = [];
-  if (noInbox) frases.push(`${t("Continua no inbox:")} ${noInbox}.`);
+  // Pedido do Anderson (2026-09-22): arquivar o canal some com a conversa
+  // do Inbox ativo também — o histórico fica salvo, só some da lista.
+  if (guardado)
+    frases.push(`${t("Some do inbox, mas fica salvo:")} ${guardado}.`);
   if (semNumero)
     frases.push(`${t("Fica salvo, mas sem número — para de atender:")} ${semNumero}.`);
   // Sobra o caso em que só há registro interno (auditoria de envio): nada a

@@ -3718,7 +3718,7 @@ export const DICIONARIO: Traducoes = {
   "Verificação recusada.": { es: "Verificación rechazada." },
   "Verificação aprovada.": { es: "Verificación aprobada." },
 
-  "Continua no inbox:": { es: "Sigue en el inbox:" },
+  "Some do inbox, mas fica salvo:": { es: "Desaparece del inbox, pero queda guardado:" },
   "Fica salvo, mas sem número — para de atender:": {
     es: "Queda guardado, pero sin número — deja de atender:",
   },

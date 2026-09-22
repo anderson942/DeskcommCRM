@@ -190,7 +190,7 @@ describe("diálogo de exclusão diz a verdade antes do clique", () => {
     await waitFor(() =>
       expect(getMock).toHaveBeenCalledWith("/api/v1/channel-sessions/canal-1?impact=1"),
     );
-    expect(await screen.findByText("Continua no inbox: 12 conversas e 340 mensagens.")).toBeInTheDocument();
+    expect(await screen.findByText("Some do inbox, mas fica salvo: 12 conversas e 340 mensagens.")).toBeInTheDocument();
     expect(
       screen.getByText("Fica salvo, mas sem número — para de atender: 1 roteador de IA."),
     ).toBeInTheDocument();
@@ -268,15 +268,16 @@ describe("frasesDoImpacto", () => {
     // exatamente o que quase aconteceu, porque as quatro fixtures deste arquivo
     // nasceram com 0 só para o typecheck parar de reclamar.
     //
-    // A frase é "Continua no inbox", e não "para de atender", de propósito: o
-    // registro da ligação é histórico COM O CLIENTE, do mesmo tipo da conversa,
-    // e sobrevive ao arquivamento do número. Era isso que sumia por cascade.
+    // A frase é "Some do inbox, mas fica salvo", e não "para de atender", de
+    // propósito: o registro da ligação é histórico COM O CLIENTE, do mesmo
+    // tipo da conversa, e sobrevive ao arquivamento do número (só some da
+    // lista ativa). Era isso que sumia por cascade.
     const frases = frasesDoImpacto({
       outcome: "archive",
       history: { conversations: 0, messages: 0, agent_versions: 0, voice_calls: 3 },
       configuration: { ai_routers: 0, channel_knobs: 0, before_send_traces: 0 },
     });
-    expect(frases).toEqual(["Continua no inbox: 3 chamadas de voz."]);
+    expect(frases).toEqual(["Some do inbox, mas fica salvo: 3 chamadas de voz."]);
   });
 
   it("uma chamada só: a frase vai no singular", () => {
@@ -285,7 +286,7 @@ describe("frasesDoImpacto", () => {
       history: { conversations: 0, messages: 0, agent_versions: 0, voice_calls: 1 },
       configuration: { ai_routers: 0, channel_knobs: 0, before_send_traces: 0 },
     });
-    expect(frases).toEqual(["Continua no inbox: 1 chamada de voz."]);
+    expect(frases).toEqual(["Some do inbox, mas fica salvo: 1 chamada de voz."]);
   });
 
   it("só auditoria pendurada: explica o arquivamento em vez de prometer que não há nada", () => {

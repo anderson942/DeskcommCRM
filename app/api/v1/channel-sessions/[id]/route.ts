@@ -368,6 +368,22 @@ export async function DELETE(
       .eq("organization_id", activeOrg.orgId)
       .eq("id", id);
     if (archErr) return fail("internal_error", archErr.message, 500, { requestId });
+
+    // Arquivar o canal some ele da lista de conexões, mas o histórico de
+    // conversa continua no banco (FK ON DELETE RESTRICT não permite outra
+    // coisa). Sem isso, as conversas desse número continuariam aparecendo
+    // como ativas no Inbox mesmo com o número desconectado — pedido do
+    // Anderson (2026-09-22): "só não ver mais essas conversas no Inbox".
+    // Só escreve quando o preflight já contou conversa pendurada — poupa uma
+    // escrita à toa no caso comum (canal sem histórico de conversa nenhum).
+    if (impact.history.conversations > 0) {
+      const { error: convErr } = await supabase
+        .from("conversations")
+        .update({ status: "archived" })
+        .eq("organization_id", activeOrg.orgId)
+        .eq("channel_session_id", id);
+      if (convErr) return fail("internal_error", convErr.message, 500, { requestId });
+    }
   } else {
     const { error: delErr } = await supabase
       .from("channel_sessions")
