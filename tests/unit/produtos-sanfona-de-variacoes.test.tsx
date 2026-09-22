@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * A SANFONA DE VARIAÇÕES (0271).
@@ -34,6 +34,7 @@ vi.mock("@/hooks/i18n/useT", () => ({ useT: () => (s: string) => s }));
 vi.mock("@/hooks/auth/AuthProvider", () => ({ usePermission: () => true }));
 
 import { ProdutosClient } from "@/app/app/products/_client";
+import { apiClient } from "@/lib/api/client";
 import type { Produto } from "@/lib/schemas/produtos";
 
 function produto(over: Partial<Produto> = {}): Produto {
@@ -186,5 +187,47 @@ describe("sanfona de variações na lista de produtos", () => {
 
     expect(screen.getByTestId("alternar-VOLD000000425-38")).toHaveTextContent("Desativar");
     expect(screen.getByTestId("alternar-VOLD000000425-40")).toHaveTextContent("Desativar");
+  });
+
+  /**
+   * Pedido do Anderson (2026-09-22): ativar/desativar afeta o que o
+   * atendente de IA oferece pro cliente na hora — não pode disparar direto
+   * no clique, sem confirmação.
+   */
+  describe("confirmação antes de ativar/desativar", () => {
+    beforeEach(() => {
+      vi.mocked(apiClient.patch).mockClear();
+    });
+
+    it("clicar em Desativar NÃO chama a API direto — abre confirmação primeiro", () => {
+      montar(variacoesDaCalca(), true);
+      fireEvent.click(screen.getByTestId("abrir-grupo-VOLD425"));
+
+      fireEvent.click(screen.getByTestId("alternar-VOLD000000425-38"));
+
+      expect(apiClient.patch).not.toHaveBeenCalled();
+      expect(screen.getByRole("alertdialog")).toHaveTextContent("Desativar este produto?");
+    });
+
+    it("confirmando no diálogo, aí sim chama a API com o produto certo", async () => {
+      montar(variacoesDaCalca(), true);
+      fireEvent.click(screen.getByTestId("abrir-grupo-VOLD425"));
+      fireEvent.click(screen.getByTestId("alternar-VOLD000000425-38"));
+
+      fireEvent.click(await screen.findByRole("button", { name: "Sim, desativar" }));
+
+      expect(apiClient.patch).toHaveBeenCalledWith("/api/v1/products/1", { ativo: false });
+    });
+
+    it("cancelando no diálogo, NÃO chama a API", () => {
+      montar(variacoesDaCalca(), true);
+      fireEvent.click(screen.getByTestId("abrir-grupo-VOLD425"));
+      fireEvent.click(screen.getByTestId("alternar-VOLD000000425-38"));
+
+      fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+      expect(apiClient.patch).not.toHaveBeenCalled();
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
   });
 });

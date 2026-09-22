@@ -5,6 +5,16 @@ import { toast } from "sonner";
 
 import { showApiError } from "@/components/feedback/ApiErrorToast";
 import { useT } from "@/hooks/i18n/useT";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { agruparProdutos, rotuloDaVariacao, type GrupoDeProdutos } from "@/lib/catalogo/agrupamento";
@@ -238,6 +248,22 @@ export function ProdutosClient({
       recarregarPaginaAtual();
     } catch (e) {
       showApiError(e);
+    }
+  }
+
+  // Pedido do Anderson (2026-09-22): ativar/desativar é um clique que afeta o
+  // que o atendente de IA oferece pro cliente na hora — não pode ser tão
+  // fácil de acionar sem querer quanto qualquer outro botão da lista.
+  const [confirmarAlternar, setConfirmarAlternar] = React.useState<Produto | null>(null);
+  const [alternando, setAlternando] = React.useState(false);
+  async function confirmarEAlternar() {
+    if (!confirmarAlternar) return;
+    setAlternando(true);
+    try {
+      await alternarAtivo(confirmarAlternar);
+      setConfirmarAlternar(null);
+    } finally {
+      setAlternando(false);
     }
   }
 
@@ -588,7 +614,7 @@ export function ProdutosClient({
                         podeEditar={podeEditar}
                         t={t}
                         onAbrirDetalhe={setDetalhe}
-                        onAlternarAtivo={(p) => void alternarAtivo(p)}
+                        onAlternarAtivo={setConfirmarAlternar}
                       />
                     ))}
                   </ul>
@@ -626,6 +652,43 @@ export function ProdutosClient({
       ) : null}
 
       <ProdutoDetalheDialog produto={detalhe} onClose={() => setDetalhe(null)} />
+
+      <AlertDialog open={confirmarAlternar !== null} onOpenChange={(open) => !open && setConfirmarAlternar(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmarAlternar?.ativo
+                ? t("Desativar este produto?")
+                : t("Reativar este produto?")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmarAlternar?.ativo
+                ? t(
+                    "O atendente de IA para de oferecer e de responder preço/estoque deste produto pra qualquer cliente, imediatamente. Isso pode afetar vendas em andamento — confirme só se tiver certeza.",
+                  )
+                : t(
+                    "O atendente de IA volta a oferecer e a responder preço/estoque deste produto pra qualquer cliente, imediatamente. Confirme só se tiver certeza.",
+                  )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={alternando}>{t("Cancelar")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={alternando}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmarEAlternar();
+              }}
+            >
+              {alternando
+                ? t("Aplicando…")
+                : confirmarAlternar?.ativo
+                  ? t("Sim, desativar")
+                  : t("Sim, reativar")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
