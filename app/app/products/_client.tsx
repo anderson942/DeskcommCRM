@@ -372,7 +372,7 @@ export function ProdutosClient({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="relevancia">{t(busca ? "Mais relevante" : "Padrão")}</SelectItem>
+            <SelectItem value="relevancia">{t(busca ? "Mais relevante" : "Ordenar por")}</SelectItem>
             <SelectItem value="nome_asc">{t("Nome A-Z")}</SelectItem>
             <SelectItem value="nome_desc">{t("Nome Z-A")}</SelectItem>
             <SelectItem value="preco_asc">{t("Menor preço")}</SelectItem>
