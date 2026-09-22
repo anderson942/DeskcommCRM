@@ -112,6 +112,14 @@ CRONS="
 # (7min) — 11 é primo com os dois, então as três raramente colidem no mesmo
 # minuto e disputam o teto de 120 req/min.
 */11 * * * *|90|api/v1/cron/shoppub-order-sync
+# IMAGEM DE PRODUTO DA SHOPPUB — preenche catalog_products.imagem_url pros
+# produtos que a sincronizacao de catalogo ja trouxe mas ainda nao tem foto
+# checada (0274). Chamada de API POR PRODUTO (sem lote), por isso e rotina
+# separada da 5min de cima, que processa pagina inteira por vez. Cadencia
+# PROPRIA (13min): quarta rodada contra a MESMA conta Shoppub do catalogo
+# (5min), dos clientes (7min) e dos pedidos (11min) — 13 e primo com os
+# tres, entao as quatro raramente colidem no mesmo minuto.
+*/13 * * * *|90|api/v1/cron/shoppub-image-backfill
 # O CASO PARADO. De hora em hora, e não a cada 5 minutos: o prazo é de 24h, e
 # uma varredura mais frequente só gastaria consulta para descobrir o mesmo nada.
 7 * * * *|60|api/v1/cron/case-stale-watcher

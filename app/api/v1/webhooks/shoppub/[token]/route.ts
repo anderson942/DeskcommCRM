@@ -30,9 +30,10 @@ import type { NextRequest } from "next/server";
 
 import { fail, ok } from "@/lib/api/wrappers";
 import { audit } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 import { ehVendavel } from "@/lib/shoppub/config";
 import { ShoppubApiClient, ShoppubApiError } from "@/lib/shoppub/api-client";
-import { mapearProduto } from "@/lib/shoppub/mapear-produto";
+import { imagemPrincipal, mapearProduto } from "@/lib/shoppub/mapear-produto";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -105,7 +106,31 @@ export async function POST(req: NextRequest, ctx: RouteCtx): Promise<Response> {
     const categorias = await client.obterCategorias();
     const mapaCategorias = new Map(categorias.map((c) => [c.id, c.nome]));
 
-    const linha = mapearProduto(produto, integration.organization_id, subdominio, mapaCategorias);
+    // Best-effort: imagem é um endpoint À PARTE (a Shoppub não embute na
+    // listagem/detalhe de produto — ver `api-client.ts`), uma chamada a mais
+    // por webhook, aceitável (é sempre 1 produto por evento). Falha aqui
+    // NUNCA pode derrubar o preço/estoque, que é o motivo do webhook existir
+    // — por isso `imagemUrl` fica `undefined` (não escreve a coluna) em vez
+    // de `null` (que apagaria uma foto boa já salva de uma rodada anterior).
+    let imagemUrl: string | null | undefined;
+    try {
+      imagemUrl = imagemPrincipal(await client.obterImagensDoProduto(body.sku));
+    } catch (err) {
+      logger.warn("[webhook.shoppub] busca de imagem falhou — segue sem imagem_url nesta rodada", {
+        organizationId: integration.organization_id,
+        sku: body.sku,
+        detail: err instanceof Error ? err.message : "erro",
+      });
+    }
+
+    const linha = {
+      ...mapearProduto(produto, integration.organization_id, subdominio, mapaCategorias),
+      // `imagem_checada_em` só entra junto de `imagem_url` — os dois vêm da
+      // MESMA consulta bem-sucedida (0274: marca "já perguntei", mesmo
+      // quando a resposta foi "sem foto"). Consulta que falhou não marca
+      // nenhum dos dois, pra o backfill de imagem tentar de novo depois.
+      ...(imagemUrl !== undefined ? { imagem_url: imagemUrl, imagem_checada_em: new Date().toISOString() } : {}),
+    };
     const { error: upsertErr } = await admin
       .from("catalog_products")
       .upsert(linha, { onConflict: "organization_id,codigo" });

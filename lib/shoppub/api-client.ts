@@ -122,6 +122,23 @@ interface ShoppubPedidosPage {
   results: ShoppubPedido[];
 }
 
+/**
+ * A imagem NÃO vem na listagem/detalhe de produto (`/produtos/`,
+ * `/produto/{sku}/`) — é um serviço à parte, uma chamada POR SKU, sem
+ * endpoint em lote (confirmado contra a documentação oficial,
+ * 2026-09-22: https://shoppub.readme.io/reference/obter-imagens-de-um-produto).
+ */
+export interface ShoppubImagemDeProduto {
+  id: number;
+  foto: string;
+  principal: boolean;
+  order: number;
+}
+
+interface ShoppubImagensDeProdutoResposta {
+  images: ShoppubImagemDeProduto[];
+}
+
 interface ClientOpts {
   subdominio: string;
   token: string;
@@ -261,5 +278,13 @@ export class ShoppubApiClient {
       min_data: opts.minData,
       max_data: opts.maxData,
     });
+  }
+
+  /** Todas as imagens cadastradas do produto (pode ser lista vazia — nem todo produto tem foto). */
+  async obterImagensDoProduto(sku: string): Promise<ShoppubImagemDeProduto[]> {
+    const resposta = await this.request<ShoppubImagensDeProdutoResposta>(
+      `/produto-imagens/${encodeURIComponent(sku)}/`,
+    );
+    return resposta.images ?? [];
   }
 }

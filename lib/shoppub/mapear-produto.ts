@@ -5,7 +5,7 @@
  * backfill (`app/api/v1/cron/shoppub-backfill`) — mesma regra nos dois
  * lugares, não duas cópias que podem divergir.
  */
-import type { ShoppubProduto } from "./api-client";
+import type { ShoppubImagemDeProduto, ShoppubProduto } from "./api-client";
 
 /**
  * O "de" — só quando existe promoção de verdade (por < de). `null` no caso
@@ -43,6 +43,19 @@ function resolverCategorias(p: ShoppubProduto, mapaCategorias: Map<number, strin
  * pra todo produto daquela rodada — a lista de categorias é pequena e
  * muda raro, não vale uma chamada de API por produto.
  */
+/**
+ * Qual das imagens do produto é A imagem (a tela mostra uma miniatura só,
+ * não a galeria inteira). `principal` é o sinal que a própria Shoppub dá
+ * pra isso; sem nenhuma marcada, a de `order` mais baixo é a convenção mais
+ * razoável (primeira da vitrine); lista vazia → sem foto, `null` é honesto.
+ */
+export function imagemPrincipal(imagens: readonly ShoppubImagemDeProduto[]): string | null {
+  if (imagens.length === 0) return null;
+  const marcada = imagens.find((i) => i.principal);
+  if (marcada) return marcada.foto;
+  return [...imagens].sort((a, b) => a.order - b.order)[0]!.foto;
+}
+
 export function mapearProduto(
   p: ShoppubProduto,
   orgId: string,

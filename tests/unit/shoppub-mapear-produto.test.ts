@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { mapearProduto } from "@/lib/shoppub/mapear-produto";
-import type { ShoppubProduto } from "@/lib/shoppub/api-client";
+import { imagemPrincipal, mapearProduto } from "@/lib/shoppub/mapear-produto";
+import type { ShoppubImagemDeProduto, ShoppubProduto } from "@/lib/shoppub/api-client";
 
 const ORG_ID = "11111111-1111-4111-8111-111111111111";
 const HOST = "www.outlet360.com.br";
@@ -120,5 +120,41 @@ describe("mapearProduto", () => {
       expect(mapearProduto(produto({ categorias: [] }), ORG_ID, HOST, MAPA_VAZIO).categoria).toBeNull();
       expect(mapearProduto(produto({ categorias: [999999] }), ORG_ID, HOST, MAPA_VAZIO).categoria).toBeNull();
     });
+  });
+});
+
+/**
+ * `imagemPrincipal` (0274) — qual das imagens da Shoppub vira `imagem_url`.
+ * A API não tem campo de imagem na listagem/detalhe de produto; imagem vem
+ * de um endpoint à parte (`GET /produto-imagens/{sku}/`), que devolve uma
+ * lista — este é o critério de "qual delas é A foto que a sanfona mostra".
+ */
+describe("imagemPrincipal", () => {
+  function imagem(over: Partial<ShoppubImagemDeProduto> = {}): ShoppubImagemDeProduto {
+    return { id: 1, foto: "https://cdn.exemplo/foto.jpg", principal: false, order: 0, ...over };
+  }
+
+  it("lista vazia — produto sem foto cadastrada — devolve null", () => {
+    expect(imagemPrincipal([])).toBeNull();
+  });
+
+  it("usa a marcada `principal`, mesmo que não seja a de menor `order`", () => {
+    const imagens = [
+      imagem({ id: 1, foto: "capa.jpg", principal: false, order: 0 }),
+      imagem({ id: 2, foto: "a-de-verdade.jpg", principal: true, order: 2 }),
+    ];
+    expect(imagemPrincipal(imagens)).toBe("a-de-verdade.jpg");
+  });
+
+  it("sem nenhuma marcada `principal`, usa a de menor `order`", () => {
+    const imagens = [
+      imagem({ id: 1, foto: "segunda.jpg", principal: false, order: 1 }),
+      imagem({ id: 2, foto: "primeira.jpg", principal: false, order: 0 }),
+    ];
+    expect(imagemPrincipal(imagens)).toBe("primeira.jpg");
+  });
+
+  it("uma imagem só, sem `principal` marcado — usa ela mesma", () => {
+    expect(imagemPrincipal([imagem({ foto: "unica.jpg" })])).toBe("unica.jpg");
   });
 });
