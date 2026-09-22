@@ -556,9 +556,15 @@ export function ProdutosClient({
                   data-testid={`abrir-grupo-${g.chave}`}
                   aria-expanded={gruposAbertos.has(g.chave)}
                 >
-                  <span className="w-3 shrink-0 text-center text-muted-foreground" aria-hidden="true">
-                    {gruposAbertos.has(g.chave) ? "−" : "+"}
-                  </span>
+                  {g.variacoes[0]?.imagem_url ? (
+                    <img
+                      src={g.variacoes[0].imagem_url}
+                      alt=""
+                      className="h-9 w-9 shrink-0 rounded-md border object-cover"
+                    />
+                  ) : (
+                    <span className="h-9 w-9 shrink-0 rounded-md border bg-muted" aria-hidden="true" />
+                  )}
                   <span
                     className={`min-w-0 flex-1 truncate font-medium ${g.ativo ? "" : "text-muted-foreground line-through"}`}
                   >
@@ -566,6 +572,9 @@ export function ProdutosClient({
                   </span>
                   <span className="shrink-0 text-xs text-muted-foreground">
                     {g.variacoes.length} {t(g.variacoes.length === 1 ? "variação" : "variações")}
+                  </span>
+                  <span className="w-3 shrink-0 text-center text-muted-foreground" aria-hidden="true">
+                    {gruposAbertos.has(g.chave) ? "−" : "+"}
                   </span>
                 </button>
                 {gruposAbertos.has(g.chave) ? (
