@@ -29,6 +29,54 @@ const TAMANHOS_VALIDOS = [10, 25, 50, 100] as const;
 const TETO_TUDO = 2000;
 
 /**
+ * Ordenação da lista de produtos (pedido do Anderson, 2026-09-22). `null`
+ * (ou valor não reconhecido) preserva o comportamento de antes desta
+ * feature — nome A-Z sem busca, relevância com busca.
+ */
+const ORDENACOES_VALIDAS = ["nome_asc", "nome_desc", "preco_asc", "preco_desc"] as const;
+type Ordenacao = (typeof ORDENACOES_VALIDAS)[number];
+
+function ordenacaoDaQuery(req: NextRequest): Ordenacao | null {
+  const bruto = req.nextUrl.searchParams.get("ordenar");
+  return (ORDENACOES_VALIDAS as readonly string[]).includes(bruto ?? "") ? (bruto as Ordenacao) : null;
+}
+
+/**
+ * Preço representativo do GRUPO (a sanfona mostra um card por grupo, não
+ * por variação) — o menor `preco_cents` entre as variações, mesmo critério
+ * da RPC (`fn_listar_produtos_agrupados`, 0273) pro caminho sem busca.
+ */
+function precoMinDoGrupo(grupo: GrupoDeProdutos<{ preco_cents: number }>): number {
+  return grupo.variacoes.reduce(
+    (menor, v) => (v.preco_cents < menor ? v.preco_cents : menor),
+    Number.POSITIVE_INFINITY,
+  );
+}
+
+/**
+ * Aplica a ordenação escolhida sobre grupos JÁ FILTRADOS (por busca ou não)
+ * — a busca decide QUAIS grupos entram, a ordenação decide em que ORDEM
+ * aparecem. Confirmado com o Anderson (2026-09-22): a ordenação escolhida
+ * sempre vence, inclusive por cima do ranqueamento de relevância da busca.
+ */
+function ordenarGrupos<T extends { preco_cents: number }>(
+  grupos: readonly GrupoDeProdutos<T>[],
+  ordenacao: Ordenacao,
+): GrupoDeProdutos<T>[] {
+  const copia = [...grupos];
+  switch (ordenacao) {
+    case "nome_asc":
+      return copia.sort((a, b) => a.titulo.localeCompare(b.titulo));
+    case "nome_desc":
+      return copia.sort((a, b) => b.titulo.localeCompare(a.titulo));
+    case "preco_asc":
+      return copia.sort((a, b) => precoMinDoGrupo(a) - precoMinDoGrupo(b));
+    case "preco_desc":
+      return copia.sort((a, b) => precoMinDoGrupo(b) - precoMinDoGrupo(a));
+  }
+}
+
+/**
  * Quantos candidatos a rede larga do banco traz pro ranqueamento fino do
  * `lib/catalogo/busca.ts` refinar. Grande o bastante pra não perder produto
  * de verdade (a rede é generosa de propósito — ver a migration 0270), pequeno
@@ -36,7 +84,7 @@ const TETO_TUDO = 2000;
  */
 const CANDIDATOS_DA_BUSCA = 500;
 
-type LinhaDeProduto = ProdutoBuscavel & ProdutoAgrupavel & Record<string, unknown>;
+type LinhaDeProduto = ProdutoBuscavel & ProdutoAgrupavel & { preco_cents: number } & Record<string, unknown>;
 
 /** Uma linha crua devolvida por `fn_listar_produtos_agrupados` (0271) — `variacoes` já vem em JSON. */
 interface LinhaAgrupadaDoBanco {
@@ -69,6 +117,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const estoqueBruto = req.nextUrl.searchParams.get("estoque");
   const estoque = estoqueBruto === "disponivel" || estoqueBruto === "esgotado" ? estoqueBruto : null;
   const { pagina, tamanho } = paginaEhTamanho(req);
+  const ordenacao = ordenacaoDaQuery(req);
   const supabase = await createClient();
 
   // Com busca: rede larga no banco (migration 0270 — tolera erro de
@@ -104,7 +153,10 @@ export async function GET(req: NextRequest): Promise<Response> {
       grupo: g,
     }));
     const achados = ordenarPorRelevancia(gruposBuscaveis, busca);
-    const gruposRankeados = achados.map((a) => a.produto.grupo);
+    const gruposPorRelevancia = achados.map((a) => a.produto.grupo);
+    // A ordenação escolhida vence a relevância — a busca já filtrou "o quê",
+    // isto decide só "em que ordem" (confirmado com o Anderson, 2026-09-22).
+    const gruposRankeados = ordenacao ? ordenarGrupos(gruposPorRelevancia, ordenacao) : gruposPorRelevancia;
     const desde = (pagina - 1) * tamanho;
     const pagina_de_grupos = gruposRankeados.slice(desde, desde + tamanho);
 
@@ -122,6 +174,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     p_estoque: estoque,
     p_limite: tamanho,
     p_offset: (pagina - 1) * tamanho,
+    p_ordenar_por: ordenacao,
   });
 
   if (error) return fail("internal_error", "Erro ao listar os produtos.", 500, { requestId });

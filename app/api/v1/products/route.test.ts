@@ -306,3 +306,77 @@ describe("GET /api/v1/products (sem busca) — agrupamento e paginação no banc
     expect(corpo.meta.total).toBe(0);
   });
 });
+
+/**
+ * Ordenação (0273) — pedido do Anderson (2026-09-22): nome A-Z/Z-A, maior/
+ * menor preço. Sem busca, quem ordena é o banco (`p_ordenar_por` repassado
+ * pra `fn_listar_produtos_agrupados`); com busca, a ordenação escolhida
+ * VENCE a relevância — a busca decide "o quê", a ordenação decide "em que
+ * ordem" (confirmado com o Anderson).
+ */
+describe("GET /api/v1/products?ordenar=…", () => {
+  it("sem `ordenar` na query, repassa null pra RPC — comportamento de antes da feature", async () => {
+    const { supabase, chamadas } = supabaseComRpc({ fn_listar_produtos_agrupados: [] });
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+    const { GET } = await import("./route");
+
+    await GET(requisicaoDeBusca(""));
+
+    expect(chamadas[0]!.params).toMatchObject({ p_ordenar_por: null });
+  });
+
+  it("`ordenar=preco_asc` é repassado pra RPC tal e qual", async () => {
+    const { supabase, chamadas } = supabaseComRpc({ fn_listar_produtos_agrupados: [] });
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+    const { GET } = await import("./route");
+
+    await GET(requisicaoDeBusca("ordenar=preco_asc"));
+
+    expect(chamadas[0]!.params).toMatchObject({ p_ordenar_por: "preco_asc" });
+  });
+
+  it("valor de `ordenar` não reconhecido vira null — não repassa lixo pra RPC", async () => {
+    const { supabase, chamadas } = supabaseComRpc({ fn_listar_produtos_agrupados: [] });
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+    const { GET } = await import("./route");
+
+    await GET(requisicaoDeBusca("ordenar=alfabetica-invertida-de-tras-pra-frente"));
+
+    expect(chamadas[0]!.params).toMatchObject({ p_ordenar_por: null });
+  });
+
+  it("com busca, `ordenar=preco_desc` VENCE a relevância — o mais caro vem primeiro mesmo sendo o menos relevante", async () => {
+    // "Blusa" é prefixo exato de "blusa" (relevância alta); "Camiseta Azul"
+    // só bate por substring fraca — sem ordenação, viria DEPOIS. Preço
+    // inverte: Camiseta (mais cara) tem que vir primeiro com preco_desc.
+    const { supabase } = supabaseComRpc({
+      fn_buscar_produtos_candidatos: [
+        { id: "1", codigo: "A", nome: "Blusa qualquer", marca: null, categoria: null, ativo: true, preco_cents: 1000 },
+        { id: "2", codigo: "B", nome: "Camiseta Azul Blusa", marca: null, categoria: null, ativo: true, preco_cents: 9000 },
+      ],
+    });
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+    const { GET } = await import("./route");
+
+    const resposta = await GET(requisicaoDeBusca("busca=blusa&ordenar=preco_desc"));
+    const corpo = (await resposta.json()) as { data: Array<{ chave: string }> };
+
+    expect(corpo.data.map((g) => g.chave)).toEqual(["B", "A"]);
+  });
+
+  it("com busca, `ordenar=nome_asc` ordena por título do grupo, ignorando relevância", async () => {
+    const { supabase } = supabaseComRpc({
+      fn_buscar_produtos_candidatos: [
+        { id: "1", codigo: "A", nome: "Zebra Camiseta", marca: null, categoria: null, ativo: true, preco_cents: 1000 },
+        { id: "2", codigo: "B", nome: "Abelha Camiseta", marca: null, categoria: null, ativo: true, preco_cents: 1000 },
+      ],
+    });
+    vi.mocked(createClient).mockResolvedValue(supabase as never);
+    const { GET } = await import("./route");
+
+    const resposta = await GET(requisicaoDeBusca("busca=camiseta&ordenar=nome_asc"));
+    const corpo = (await resposta.json()) as { data: Array<{ titulo: string }> };
+
+    expect(corpo.data.map((g) => g.titulo)).toEqual(["Abelha Camiseta", "Zebra Camiseta"]);
+  });
+});

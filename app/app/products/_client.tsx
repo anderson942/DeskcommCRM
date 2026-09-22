@@ -19,6 +19,11 @@ type Tamanho = 10 | 25 | 50 | 100 | "tudo";
 /** Tem que bater com `TAMANHOS_VALIDOS` de `app/api/v1/products/route.ts`. */
 const TAMANHOS_VALIDOS = [10, 25, 50, 100] as const;
 
+/** "" = sem ordenação escolhida (nome A-Z sem busca, relevância com busca —
+ *  o mesmo comportamento de antes desta feature). Valores têm que bater com
+ *  `ORDENACOES_VALIDAS` de `app/api/v1/products/route.ts`. */
+type Ordenacao = "" | "nome_asc" | "nome_desc" | "preco_asc" | "preco_desc";
+
 interface Textos {
   titulo: string;
   subtitulo: string;
@@ -96,6 +101,7 @@ export function ProdutosClient({
   const [pagina, setPagina] = React.useState(1);
   const [tamanho, setTamanho] = React.useState<Tamanho>(tamanhoInicial as Tamanho);
   const [filtroEstoque, setFiltroEstoque] = React.useState<FiltroEstoque>("todos");
+  const [ordenacao, setOrdenacao] = React.useState<Ordenacao>("");
   // `inicial` vem FLAT do server component (`page.tsx`, sem mudar) — agrupa
   // uma vez aqui só pro primeiro render; toda busca seguinte já chega
   // agrupada da API (0271), sem precisar reagrupar no cliente.
@@ -142,7 +148,7 @@ export function ProdutosClient({
   // numa página 8 que não existe mais depois de estreitar o resultado.
   React.useEffect(() => {
     setPagina(1);
-  }, [busca, tamanho, filtroEstoque]);
+  }, [busca, tamanho, filtroEstoque, ordenacao]);
 
   React.useEffect(() => {
     const controller = new AbortController();
@@ -152,6 +158,7 @@ export function ProdutosClient({
     params.set("pagina", String(pagina));
     params.set("tamanho", String(tamanho));
     if (filtroEstoque !== "todos") params.set("estoque", filtroEstoque);
+    if (ordenacao !== "") params.set("ordenar", ordenacao);
 
     apiClient
       .get<ApiSuccess<GrupoDeProdutos<Produto>[]>>(`/api/v1/products?${params.toString()}`, {
@@ -170,7 +177,7 @@ export function ProdutosClient({
       });
 
     return () => controller.abort();
-  }, [busca, pagina, tamanho, filtroEstoque, versao]);
+  }, [busca, pagina, tamanho, filtroEstoque, ordenacao, versao]);
 
   const tamanhoNumerico = tamanho === "tudo" ? total || 1 : tamanho;
   const totalPaginas = Math.max(1, Math.ceil(total / tamanhoNumerico));
@@ -357,6 +364,19 @@ export function ProdutosClient({
               </SelectItem>
             ))}
             <SelectItem value="tudo">{t("Tudo")}</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={ordenacao === "" ? "relevancia" : ordenacao} onValueChange={(v) => setOrdenacao(v === "relevancia" ? "" : (v as Ordenacao))}>
+          <SelectTrigger className="h-8 w-[160px] text-xs" data-testid="ordenar-produtos">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="relevancia">{t(busca ? "Mais relevante" : "Padrão")}</SelectItem>
+            <SelectItem value="nome_asc">{t("Nome A-Z")}</SelectItem>
+            <SelectItem value="nome_desc">{t("Nome Z-A")}</SelectItem>
+            <SelectItem value="preco_asc">{t("Menor preço")}</SelectItem>
+            <SelectItem value="preco_desc">{t("Maior preço")}</SelectItem>
           </SelectContent>
         </Select>
 
